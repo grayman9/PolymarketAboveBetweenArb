@@ -1,0 +1,1052 @@
+2026-03-07 19:17:22,633 [INFO] ============================================================
+2026-03-07 19:17:22,633 [INFO] Polymarket Arb Scanner - Snapshot Mode
+2026-03-07 19:17:22,633 [INFO] ============================================================
+2026-03-07 19:18:16,742 [INFO] Found 1013 matching events
+2026-03-07 19:18:16,751 [INFO] Found 15 event pairs
+2026-03-07 19:18:16,752 [INFO] Fetching 2 orderbooks...
+2026-03-07 19:18:17,326 [WARNING] Failed to fetch book for "...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=%22
+2026-03-07 19:18:17,938 [WARNING] Failed to fetch book for [...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=%5B
+2026-03-07 19:18:17,950 [INFO] 
+BTC march 7: 0 coverings to check
+2026-03-07 19:18:17,951 [INFO] 
+ETH march 7: 55 coverings to check
+2026-03-07 19:18:17,952 [INFO] 
+BTC march 8: 66 coverings to check
+2026-03-07 19:18:17,954 [INFO] 
+ETH march 8: 66 coverings to check
+2026-03-07 19:18:17,955 [INFO] 
+BTC march 9: 66 coverings to check
+2026-03-07 19:18:17,956 [INFO] 
+ETH march 9: 66 coverings to check
+2026-03-07 19:18:17,957 [INFO] 
+ETH march 10: 66 coverings to check
+2026-03-07 19:18:17,959 [INFO] 
+BTC march 10: 66 coverings to check
+2026-03-07 19:18:17,960 [INFO] 
+ETH march 11: 66 coverings to check
+2026-03-07 19:18:17,961 [INFO] 
+BTC march 11: 66 coverings to check
+2026-03-07 19:18:17,965 [INFO] 
+ETH march 12: 66 coverings to check
+2026-03-07 19:18:17,966 [INFO] 
+BTC march 12: 66 coverings to check
+2026-03-07 19:18:17,968 [INFO] 
+ETH march 13: 66 coverings to check
+2026-03-07 19:18:17,969 [INFO] 
+BTC march 13: 66 coverings to check
+2026-03-07 19:18:17,970 [INFO] 
+ETH march 14: 55 coverings to check
+2026-03-07 19:18:17,971 [INFO] 
+No arbitrage opportunities found at current prices.
+2026-03-07 19:18:40,481 [INFO] ============================================================
+2026-03-07 19:18:40,481 [INFO] Polymarket Arb Scanner - Snapshot Mode
+2026-03-07 19:18:40,481 [INFO] ============================================================
+2026-03-07 19:19:32,494 [INFO] Found 1012 matching events
+2026-03-07 19:19:32,505 [INFO] Found 15 event pairs
+2026-03-07 19:19:32,505 [INFO] Fetching 480 orderbooks...
+2026-03-07 19:24:51,601 [INFO] 
+BTC march 7: 0 coverings to check
+2026-03-07 19:24:51,601 [INFO] 
+ETH march 7: 55 coverings to check
+2026-03-07 19:24:51,603 [INFO] 
+BTC march 8: 66 coverings to check
+2026-03-07 19:24:51,604 [INFO]   Best covering cost: 1.0000 (edge: 0.0c)
+2026-03-07 19:24:51,604 [INFO]     Above $60,000 NO [above]: ask=0.0020 size=10743.0
+2026-03-07 19:24:51,604 [INFO]     Between $60,000-$62,000 [between]: ask=0.0040 size=5192.0
+2026-03-07 19:24:51,604 [INFO]     Above $62,000 YES [above]: ask=0.9940 size=39.7
+2026-03-07 19:24:51,606 [INFO] 
+ETH march 8: 66 coverings to check
+2026-03-07 19:24:51,607 [INFO]   Best covering cost: 0.9990 (edge: 0.1c)
+2026-03-07 19:24:51,607 [INFO]     Above $1,700 NO [above]: ask=0.0030 size=5751.5
+2026-03-07 19:24:51,607 [INFO]     Between $1,700-$1,800 [between]: ask=0.0050 size=5.0
+2026-03-07 19:24:51,607 [INFO]     Above $1,800 YES [above]: ask=0.9910 size=50.0
+2026-03-07 19:24:51,607 [INFO] 
+BTC march 9: 66 coverings to check
+2026-03-07 19:24:51,607 [INFO]   Best covering cost: 0.9960 (edge: 0.4c)
+2026-03-07 19:24:51,607 [INFO]     Below $60,000 [between]: ask=0.0040 size=42.0
+2026-03-07 19:24:51,607 [INFO]     Above $60,000 YES [above]: ask=0.9920 size=219.3
+2026-03-07 19:24:51,608 [INFO] 
+ETH march 9: 66 coverings to check
+2026-03-07 19:24:51,608 [INFO]   Best covering cost: 1.0090 (edge: -0.9c)
+2026-03-07 19:24:51,608 [INFO]     Above $2,500 NO [above]: ask=0.9970 size=61.8
+2026-03-07 19:24:51,608 [INFO]     Above $2,500 [between]: ask=0.0120 size=40.2
+2026-03-07 19:24:51,609 [INFO] 
+ETH march 10: 66 coverings to check
+2026-03-07 19:24:51,609 [INFO]   Best covering cost: 0.9990 (edge: 0.1c)
+2026-03-07 19:24:51,609 [INFO]     Above $2,400 NO [above]: ask=0.9920 size=8.1
+2026-03-07 19:24:51,609 [INFO]     Above $2,400 [between]: ask=0.0070 size=200.0
+2026-03-07 19:24:51,610 [INFO] 
+BTC march 10: 66 coverings to check
+2026-03-07 19:24:51,610 [INFO]   Best covering cost: 0.9990 (edge: 0.1c)
+2026-03-07 19:24:51,610 [INFO]     Below $60,000 [between]: ask=0.0160 size=5.2
+2026-03-07 19:24:51,610 [INFO]     Above $60,000 YES [above]: ask=0.9830 size=200.0
+2026-03-07 19:24:51,610 [INFO] 
+ETH march 11: 66 coverings to check
+2026-03-07 19:24:51,610 [INFO]   Best covering cost: 1.0020 (edge: -0.2c)
+2026-03-07 19:24:51,610 [INFO]     Below $1,700 [between]: ask=0.0320 size=3.0
+2026-03-07 19:24:51,610 [INFO]     Above $1,700 YES [above]: ask=0.9700 size=231.1
+2026-03-07 19:24:51,611 [INFO] 
+BTC march 11: 66 coverings to check
+2026-03-07 19:24:51,611 [INFO]   Best covering cost: 1.0060 (edge: -0.6c)
+2026-03-07 19:24:51,611 [INFO]     Above $82,000 NO [above]: ask=0.9920 size=7.0
+2026-03-07 19:24:51,611 [INFO]     Above $82,000 [between]: ask=0.0140 size=20.4
+2026-03-07 19:24:51,612 [INFO] 
+ETH march 12: 66 coverings to check
+2026-03-07 19:24:51,612 [INFO]   Best covering cost: 1.0500 (edge: -5.0c)
+2026-03-07 19:24:51,612 [INFO]     Above $2,000 NO [above]: ask=0.5800 size=5000.0
+2026-03-07 19:24:51,612 [INFO]     Between $2,000-$2,100 [between]: ask=0.2300 size=20.0
+2026-03-07 19:24:51,612 [INFO]     Above $2,100 YES [above]: ask=0.2400 size=26.1
+2026-03-07 19:24:51,613 [INFO] 
+BTC march 12: 66 coverings to check
+2026-03-07 19:24:51,613 [INFO]   Best covering cost: 1.0540 (edge: -5.4c)
+2026-03-07 19:24:51,613 [INFO]     Above $62,000 NO [above]: ask=0.0840 size=10.0
+2026-03-07 19:24:51,613 [INFO]     Between $62,000-$64,000 [between]: ask=0.1500 size=10.0
+2026-03-07 19:24:51,613 [INFO]     Above $64,000 YES [above]: ask=0.8200 size=299.7
+2026-03-07 19:24:51,613 [INFO] 
+ETH march 13: 66 coverings to check
+2026-03-07 19:24:51,613 [INFO]   Best covering cost: 1.0230 (edge: -2.3c)
+2026-03-07 19:24:51,613 [INFO]     Below $1,500 [between]: ask=0.0300 size=4225.0
+2026-03-07 19:24:51,613 [INFO]     Above $1,500 YES [above]: ask=0.9930 size=217.1
+2026-03-07 19:24:51,614 [INFO] 
+BTC march 13: 66 coverings to check
+2026-03-07 19:24:51,614 [INFO]   Best covering cost: 1.0200 (edge: -2.0c)
+2026-03-07 19:24:51,614 [INFO]     Above $64,000 NO [above]: ask=0.2300 size=5.0
+2026-03-07 19:24:51,614 [INFO]     Between $64,000-$66,000 [between]: ask=0.1400 size=10.0
+2026-03-07 19:24:51,614 [INFO]     Above $66,000 YES [above]: ask=0.6500 size=238.8
+2026-03-07 19:24:51,615 [INFO] 
+ETH march 14: 55 coverings to check
+2026-03-07 19:24:51,615 [INFO]   Best covering cost: 1.9500 (edge: -95.0c)
+2026-03-07 19:24:51,615 [INFO]     Below $1,500 [between]: ask=0.9600 size=25.0
+2026-03-07 19:24:51,615 [INFO]     Above $1,500 YES [above]: ask=0.9900 size=319.9
+2026-03-07 19:24:51,616 [INFO] 
+No arbitrage opportunities found at current prices.
+2026-03-07 19:26:08,586 [INFO] ============================================================
+2026-03-07 19:26:08,587 [INFO] Polymarket Arb Scanner - Snapshot Mode
+2026-03-07 19:26:08,587 [INFO] ============================================================
+2026-03-07 19:33:15,766 [INFO] ============================================================
+2026-03-07 19:33:15,767 [INFO] Polymarket Arb Scanner - Snapshot Mode
+2026-03-07 19:33:15,767 [INFO] ============================================================
+2026-03-07 19:33:19,888 [INFO] Found 16 event pairs
+2026-03-07 19:33:19,888 [INFO] Fetching 516 orderbooks...
+2026-03-07 19:33:22,353 [WARNING] Failed to fetch book for 10283582253835843942...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=102835822538358439420409554041039677939593409709293134515774821322811144874432
+2026-03-07 19:33:27,457 [WARNING] Failed to fetch book for 36372362962672778389...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=36372362962672778389808585004766899584331700616526545822068417636993046633228
+2026-03-07 19:33:27,461 [INFO]   Fetched 50/516 orderbooks...
+2026-03-07 19:33:29,978 [WARNING] Failed to fetch book for 28470642901842453804...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=28470642901842453804487959138227155571908896979508298818088400035599828682604
+2026-03-07 19:33:32,197 [WARNING] Failed to fetch book for 27084225981476413266...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=27084225981476413266875577578533011968854441401394667396910067633309545907374
+2026-03-07 19:33:32,540 [INFO]   Fetched 100/516 orderbooks...
+2026-03-07 19:33:35,129 [WARNING] Failed to fetch book for 56357339500659369272...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=56357339500659369272102504915461516511192880136464726558844007748672399391485
+2026-03-07 19:33:39,703 [INFO]   Fetched 150/516 orderbooks...
+2026-03-07 19:33:42,047 [WARNING] Failed to fetch book for 95714512296159852123...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=95714512296159852123804292458791376091893673270603226904946756871860904996233
+2026-03-07 19:33:44,980 [INFO]   Fetched 200/516 orderbooks...
+2026-03-07 19:33:47,433 [WARNING] Failed to fetch book for 81003447698555425472...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=81003447698555425472688352506613975347404870515601410868719180564525305073242
+2026-03-07 19:33:49,427 [WARNING] Failed to fetch book for 34296608684539863048...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=34296608684539863048823876569239405135027744709902998001060592143247079929671
+2026-03-07 19:33:50,088 [WARNING] Failed to fetch book for 78950939407828265885...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=78950939407828265885720602878857906321186192091164370681513917057995076924956
+2026-03-07 19:33:52,286 [INFO]   Fetched 250/516 orderbooks...
+2026-03-07 19:33:55,119 [WARNING] Failed to fetch book for 79117730663271284860...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=79117730663271284860211202166825528972823025790024641237098943814438045153663
+2026-03-07 19:33:56,306 [WARNING] Failed to fetch book for 68232897591836918208...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=68232897591836918208305466836869537901980996595370794783712631121735745345092
+2026-03-07 19:33:57,419 [WARNING] Failed to fetch book for 78452845996600064843...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=784528459966000648434869895762114604449490618149614261802845104002048621764
+2026-03-07 19:33:57,857 [INFO]   Fetched 300/516 orderbooks...
+2026-03-07 19:34:04,843 [INFO]   Fetched 350/516 orderbooks...
+2026-03-07 19:34:10,250 [INFO]   Fetched 400/516 orderbooks...
+2026-03-07 19:34:17,262 [INFO]   Fetched 450/516 orderbooks...
+2026-03-07 19:34:17,717 [WARNING] Failed to fetch book for 77845941044320518267...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=77845941044320518267423011482278967005133902562706136488670924069599493648304
+2026-03-07 19:34:22,713 [INFO]   Fetched 500/516 orderbooks...
+2026-03-07 19:34:23,992 [WARNING] Failed to fetch book for 44798728134550534667...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=44798728134550534667452538524656979467105394676364811619473697386989046756255
+2026-03-07 19:34:24,036 [INFO] 
+BITCOIN march 7: 1 coverings to check
+2026-03-07 19:34:24,037 [INFO] 
+BITCOIN march 8: 66 coverings to check
+2026-03-07 19:34:24,037 [INFO]   Best covering cost: 0.9970 (edge: 0.3c)
+2026-03-07 19:34:24,037 [INFO]     Above $62,000 NO [above]: ask=0.0040 size=87.9
+2026-03-07 19:34:24,037 [INFO]     Between $62,000-$64,000 [between]: ask=0.0140 size=5.1
+2026-03-07 19:34:24,037 [INFO]     Above $64,000 YES [above]: ask=0.9790 size=112.0
+2026-03-07 19:34:24,038 [INFO] 
+BITCOIN march 9: 66 coverings to check
+2026-03-07 19:34:24,039 [INFO]   Best covering cost: 0.9960 (edge: 0.4c)
+2026-03-07 19:34:24,039 [INFO]     Below $60,000 [between]: ask=0.0040 size=67.3
+2026-03-07 19:34:24,039 [INFO]     Above $60,000 YES [above]: ask=0.9920 size=219.3
+2026-03-07 19:34:24,040 [INFO] 
+BITCOIN march 10: 66 coverings to check
+2026-03-07 19:34:24,040 [INFO]   Best covering cost: 0.9990 (edge: 0.1c)
+2026-03-07 19:34:24,040 [INFO]     Below $60,000 [between]: ask=0.0160 size=5.2
+2026-03-07 19:34:24,040 [INFO]     Above $60,000 YES [above]: ask=0.9830 size=800.0
+2026-03-07 19:34:24,040 [INFO] 
+BITCOIN march 11: 66 coverings to check
+2026-03-07 19:34:24,041 [INFO]   Best covering cost: 1.0070 (edge: -0.7c)
+2026-03-07 19:34:24,041 [INFO]     Above $82,000 NO [above]: ask=0.9930 size=8.0
+2026-03-07 19:34:24,041 [INFO]     Above $82,000 [between]: ask=0.0140 size=20.4
+2026-03-07 19:34:24,042 [INFO] 
+BITCOIN march 12: 66 coverings to check
+2026-03-07 19:34:24,043 [INFO]   Best covering cost: 1.0500 (edge: -5.0c)
+2026-03-07 19:34:24,043 [INFO]     Above $72,000 NO [above]: ask=0.8500 size=335.2
+2026-03-07 19:34:24,043 [INFO]     Between $72,000-$74,000 [between]: ask=0.1200 size=100.0
+2026-03-07 19:34:24,043 [INFO]     Above $74,000 YES [above]: ask=0.0800 size=200.0
+2026-03-07 19:34:24,044 [INFO] 
+BITCOIN march 13: 66 coverings to check
+2026-03-07 19:34:24,045 [INFO]   Best covering cost: 1.0300 (edge: -3.0c)
+2026-03-07 19:34:24,045 [INFO]     Below $60,000 [between]: ask=0.0900 size=10.0
+2026-03-07 19:34:24,045 [INFO]     Above $60,000 YES [above]: ask=0.9400 size=200.0
+2026-03-07 19:34:24,046 [INFO] 
+BITCOIN march 14: 1 coverings to check
+2026-03-07 19:34:24,046 [INFO] 
+ETHEREUM march 7: 55 coverings to check
+2026-03-07 19:34:24,048 [INFO] 
+ETHEREUM march 8: 66 coverings to check
+2026-03-07 19:34:24,048 [INFO]   Best covering cost: 1.0020 (edge: -0.2c)
+2026-03-07 19:34:24,048 [INFO]     Above $1,500 NO [above]: ask=0.0010 size=1210.0
+2026-03-07 19:34:24,048 [INFO]     Between $1,500-$1,600 [between]: ask=0.0020 size=7583.3
+2026-03-07 19:34:24,048 [INFO]     Above $1,600 YES [above]: ask=0.9990 size=4808.8
+2026-03-07 19:34:24,050 [INFO] 
+ETHEREUM march 9: 66 coverings to check
+2026-03-07 19:34:24,050 [INFO]   Best covering cost: 1.0070 (edge: -0.7c)
+2026-03-07 19:34:24,050 [INFO]     Below $1,600 [between]: ask=0.0160 size=51.0
+2026-03-07 19:34:24,050 [INFO]     Above $1,600 YES [above]: ask=0.9910 size=25.8
+2026-03-07 19:34:24,051 [INFO] 
+ETHEREUM march 10: 66 coverings to check
+2026-03-07 19:34:24,051 [INFO]   Best covering cost: 0.9990 (edge: 0.1c)
+2026-03-07 19:34:24,051 [INFO]     Above $2,400 NO [above]: ask=0.9930 size=160.0
+2026-03-07 19:34:24,051 [INFO]     Above $2,400 [between]: ask=0.0060 size=200.0
+2026-03-07 19:34:24,052 [INFO] 
+ETHEREUM march 11: 66 coverings to check
+2026-03-07 19:34:24,053 [INFO]   Best covering cost: 1.0160 (edge: -1.6c)
+2026-03-07 19:34:24,053 [INFO]     Above $2,300 NO [above]: ask=0.9790 size=6.7
+2026-03-07 19:34:24,053 [INFO]     Between $2,300-$2,400 [between]: ask=0.0290 size=121.3
+2026-03-07 19:34:24,053 [INFO]     Above $2,400 YES [above]: ask=0.0080 size=218.9
+2026-03-07 19:34:24,054 [INFO] 
+ETHEREUM march 12: 66 coverings to check
+2026-03-07 19:34:24,054 [INFO]   Best covering cost: 1.0550 (edge: -5.5c)
+2026-03-07 19:34:24,054 [INFO]     Above $1,600 NO [above]: ask=0.0220 size=85.2
+2026-03-07 19:34:24,054 [INFO]     Between $1,600-$1,700 [between]: ask=0.0730 size=40.0
+2026-03-07 19:34:24,054 [INFO]     Above $1,700 YES [above]: ask=0.9600 size=5000.0
+2026-03-07 19:34:24,056 [INFO] 
+ETHEREUM march 13: 66 coverings to check
+2026-03-07 19:34:24,056 [INFO]   Best covering cost: 1.0200 (edge: -2.0c)
+2026-03-07 19:34:24,056 [INFO]     Below $1,500 [between]: ask=0.0270 size=4225.0
+2026-03-07 19:34:24,056 [INFO]     Above $1,500 YES [above]: ask=0.9930 size=217.1
+2026-03-07 19:34:24,058 [INFO] 
+ETHEREUM march 14: 55 coverings to check
+2026-03-07 19:34:24,058 [INFO]   Best covering cost: 1.9400 (edge: -94.0c)
+2026-03-07 19:34:24,058 [INFO]     Below $1,500 [between]: ask=0.9600 size=25.0
+2026-03-07 19:34:24,058 [INFO]     Above $1,500 YES [above]: ask=0.9800 size=52.5
+2026-03-07 19:34:24,059 [INFO] 
+No arbitrage opportunities found at current prices.
+2026-03-07 19:35:52,981 [INFO] Found 7962 matching events
+2026-03-07 19:35:53,059 [INFO] Found 32 event pairs
+2026-03-07 19:35:53,059 [INFO] Fetching 1026 orderbooks...
+2026-03-07 19:36:01,743 [INFO]   Fetched 50/1026 orderbooks...
+2026-03-07 19:36:07,541 [INFO]   Fetched 100/1026 orderbooks...
+2026-03-07 19:36:16,199 [INFO]   Fetched 150/1026 orderbooks...
+2026-03-07 19:36:22,077 [INFO]   Fetched 200/1026 orderbooks...
+2026-03-07 19:36:30,331 [INFO]   Fetched 250/1026 orderbooks...
+2026-03-07 19:36:36,143 [INFO]   Fetched 300/1026 orderbooks...
+2026-03-07 19:36:44,107 [INFO]   Fetched 350/1026 orderbooks...
+2026-03-07 19:36:50,625 [INFO]   Fetched 400/1026 orderbooks...
+2026-03-07 19:36:58,472 [INFO]   Fetched 450/1026 orderbooks...
+2026-03-07 19:37:04,680 [INFO]   Fetched 500/1026 orderbooks...
+2026-03-07 19:37:12,667 [INFO]   Fetched 550/1026 orderbooks...
+2026-03-07 19:37:19,356 [INFO]   Fetched 600/1026 orderbooks...
+2026-03-07 19:37:27,744 [INFO]   Fetched 650/1026 orderbooks...
+2026-03-07 19:37:34,174 [INFO]   Fetched 700/1026 orderbooks...
+2026-03-07 19:37:42,371 [INFO]   Fetched 750/1026 orderbooks...
+2026-03-07 19:37:48,805 [INFO]   Fetched 800/1026 orderbooks...
+2026-03-07 19:37:57,215 [INFO]   Fetched 850/1026 orderbooks...
+2026-03-07 19:38:03,714 [INFO]   Fetched 900/1026 orderbooks...
+2026-03-07 19:38:12,086 [INFO]   Fetched 950/1026 orderbooks...
+2026-03-07 19:38:18,158 [INFO]   Fetched 1000/1026 orderbooks...
+2026-03-07 19:38:21,312 [INFO] 
+UNKNOWN march 2: 0 coverings to check
+2026-03-07 19:38:21,313 [INFO] 
+UNKNOWN march 7: 66 coverings to check
+2026-03-07 19:38:21,314 [INFO] 
+BTC march 7: 0 coverings to check
+2026-03-07 19:38:21,314 [INFO] 
+SOL march 7: 66 coverings to check
+2026-03-07 19:38:21,315 [INFO] 
+ETH march 7: 55 coverings to check
+2026-03-07 19:38:21,316 [INFO] 
+SOL march 8: 66 coverings to check
+2026-03-07 19:38:21,316 [INFO]   Best covering cost: 1.0070 (edge: -0.7c)
+2026-03-07 19:38:21,316 [INFO]     Above $50 NO [above]: ask=0.0010 size=2430.7
+2026-03-07 19:38:21,316 [INFO]     Between $50-$60 [between]: ask=0.0050 size=8000.0
+2026-03-07 19:38:21,316 [INFO]     Between $60-$70 [between]: ask=0.0020 size=2000.0
+2026-03-07 19:38:21,316 [INFO]     Above $70 YES [above]: ask=0.9990 size=3521.7
+2026-03-07 19:38:21,317 [INFO] 
+BTC march 8: 66 coverings to check
+2026-03-07 19:38:21,317 [INFO]   Best covering cost: 0.9960 (edge: 0.4c)
+2026-03-07 19:38:21,317 [INFO]     Above $62,000 NO [above]: ask=0.0040 size=87.9
+2026-03-07 19:38:21,317 [INFO]     Between $62,000-$64,000 [between]: ask=0.0140 size=5.1
+2026-03-07 19:38:21,317 [INFO]     Above $64,000 YES [above]: ask=0.9780 size=519.0
+2026-03-07 19:38:21,318 [INFO] 
+UNKNOWN march 8: 66 coverings to check
+2026-03-07 19:38:21,319 [INFO]   Best covering cost: 1.0020 (edge: -0.2c)
+2026-03-07 19:38:21,319 [INFO]     Above $2 NO [above]: ask=0.9990 size=5102.0
+2026-03-07 19:38:21,319 [INFO]     Between $2-$2 [between]: ask=0.0020 size=2402.5
+2026-03-07 19:38:21,319 [INFO]     Above $2 YES [above]: ask=0.0010 size=284.9
+2026-03-07 19:38:21,320 [INFO] 
+ETH march 8: 66 coverings to check
+2026-03-07 19:38:21,320 [INFO]   Best covering cost: 1.0010 (edge: -0.1c)
+2026-03-07 19:38:21,320 [INFO]     Above $1,700 NO [above]: ask=0.0030 size=5751.5
+2026-03-07 19:38:21,320 [INFO]     Between $1,700-$1,800 [between]: ask=0.0050 size=5.0
+2026-03-07 19:38:21,320 [INFO]     Above $1,800 YES [above]: ask=0.9930 size=34.3
+2026-03-07 19:38:21,321 [INFO] 
+SOL march 9: 66 coverings to check
+2026-03-07 19:38:21,322 [INFO]   Best covering cost: 1.0030 (edge: -0.3c)
+2026-03-07 19:38:21,322 [INFO]     Above $100 NO [above]: ask=0.9890 size=6.5
+2026-03-07 19:38:21,322 [INFO]     Between $100-$110 [between]: ask=0.0110 size=363.0
+2026-03-07 19:38:21,322 [INFO]     Above $110 YES [above]: ask=0.0030 size=1260.4
+2026-03-07 19:38:21,323 [INFO] 
+BTC march 9: 66 coverings to check
+2026-03-07 19:38:21,323 [INFO]   Best covering cost: 0.9960 (edge: 0.4c)
+2026-03-07 19:38:21,323 [INFO]     Below $60,000 [between]: ask=0.0040 size=67.3
+2026-03-07 19:38:21,323 [INFO]     Above $60,000 YES [above]: ask=0.9920 size=219.3
+2026-03-07 19:38:21,324 [INFO] 
+ETH march 9: 66 coverings to check
+2026-03-07 19:38:21,324 [INFO]   Best covering cost: 1.0090 (edge: -0.9c)
+2026-03-07 19:38:21,324 [INFO]     Above $2,500 NO [above]: ask=0.9970 size=61.8
+2026-03-07 19:38:21,324 [INFO]     Above $2,500 [between]: ask=0.0120 size=40.2
+2026-03-07 19:38:21,325 [INFO] 
+UNKNOWN march 9: 1 coverings to check
+2026-03-07 19:38:21,325 [INFO]   Best covering cost: 1.3090 (edge: -30.9c)
+2026-03-07 19:38:21,325 [INFO]     Below $1 [between]: ask=0.0160 size=2930.0
+2026-03-07 19:38:21,325 [INFO]     Between $1-$1 [between]: ask=0.0300 size=2925.0
+2026-03-07 19:38:21,325 [INFO]     Between $1-$1 [between]: ask=0.0310 size=90.8
+2026-03-07 19:38:21,325 [INFO]     Between $1-$1 [between]: ask=0.2200 size=2925.0
+2026-03-07 19:38:21,325 [INFO]     Between $1-$1 [between]: ask=0.6300 size=2925.0
+2026-03-07 19:38:21,325 [INFO]     Between $1-$2 [between]: ask=0.2500 size=2925.0
+2026-03-07 19:38:21,325 [INFO]     Between $2-$2 [between]: ask=0.0300 size=5.2
+2026-03-07 19:38:21,325 [INFO]     Between $2-$2 [between]: ask=0.0290 size=81.5
+2026-03-07 19:38:21,325 [INFO]     Between $2-$2 [between]: ask=0.0300 size=2925.0
+2026-03-07 19:38:21,325 [INFO]     Between $2-$2 [between]: ask=0.0270 size=5.0
+2026-03-07 19:38:21,325 [INFO]     Above $2 [between]: ask=0.0160 size=50.0
+2026-03-07 19:38:21,326 [INFO] 
+ETH march 10: 66 coverings to check
+2026-03-07 19:38:21,326 [INFO]   Best covering cost: 0.9990 (edge: 0.1c)
+2026-03-07 19:38:21,326 [INFO]     Above $2,400 NO [above]: ask=0.9930 size=160.0
+2026-03-07 19:38:21,326 [INFO]     Above $2,400 [between]: ask=0.0060 size=200.0
+2026-03-07 19:38:21,327 [INFO] 
+BTC march 10: 66 coverings to check
+2026-03-07 19:38:21,327 [INFO]   Best covering cost: 1.0000 (edge: 0.0c)
+2026-03-07 19:38:21,327 [INFO]     Below $60,000 [between]: ask=0.0170 size=7.2
+2026-03-07 19:38:21,327 [INFO]     Above $60,000 YES [above]: ask=0.9830 size=800.0
+2026-03-07 19:38:21,328 [INFO] 
+SOL march 10: 66 coverings to check
+2026-03-07 19:38:21,328 [INFO]   Best covering cost: 1.0200 (edge: -2.0c)
+2026-03-07 19:38:21,328 [INFO]     Below $40 [between]: ask=0.0220 size=50.0
+2026-03-07 19:38:21,328 [INFO]     Above $40 YES [above]: ask=0.9980 size=235.5
+2026-03-07 19:38:21,329 [INFO] 
+UNKNOWN march 10: 66 coverings to check
+2026-03-07 19:38:21,329 [INFO]   Best covering cost: 1.0000 (edge: 0.0c)
+2026-03-07 19:38:21,329 [INFO]     Below $1 [between]: ask=0.0080 size=29.9
+2026-03-07 19:38:21,329 [INFO]     Above $1 YES [above]: ask=0.9920 size=114.0
+2026-03-07 19:38:21,330 [INFO] 
+ETH march 11: 66 coverings to check
+2026-03-07 19:38:21,330 [INFO]   Best covering cost: 1.0180 (edge: -1.8c)
+2026-03-07 19:38:21,330 [INFO]     Below $1,700 [between]: ask=0.0470 size=6.1
+2026-03-07 19:38:21,330 [INFO]     Above $1,700 YES [above]: ask=0.9710 size=232.2
+2026-03-07 19:38:21,331 [INFO] 
+BTC march 11: 66 coverings to check
+2026-03-07 19:38:21,331 [INFO]   Best covering cost: 1.0070 (edge: -0.7c)
+2026-03-07 19:38:21,331 [INFO]     Above $82,000 NO [above]: ask=0.9930 size=14.2
+2026-03-07 19:38:21,331 [INFO]     Above $82,000 [between]: ask=0.0140 size=20.4
+2026-03-07 19:38:21,332 [INFO] 
+SOL march 11: 66 coverings to check
+2026-03-07 19:38:21,332 [INFO]   Best covering cost: 1.0100 (edge: -1.0c)
+2026-03-07 19:38:21,332 [INFO]     Below $50 [between]: ask=0.0200 size=3433.1
+2026-03-07 19:38:21,332 [INFO]     Above $50 YES [above]: ask=0.9900 size=8.5
+2026-03-07 19:38:21,334 [INFO] 
+UNKNOWN march 11: 66 coverings to check
+2026-03-07 19:38:21,334 [INFO]   Best covering cost: 1.0200 (edge: -2.0c)
+2026-03-07 19:38:21,334 [INFO]     Below $1 [between]: ask=0.0300 size=2939.2
+2026-03-07 19:38:21,334 [INFO]     Above $1 YES [above]: ask=0.9900 size=13.3
+2026-03-07 19:38:21,336 [INFO] 
+ETH march 12: 66 coverings to check
+2026-03-07 19:38:21,336 [INFO]   Best covering cost: 1.0550 (edge: -5.5c)
+2026-03-07 19:38:21,336 [INFO]     Above $1,600 NO [above]: ask=0.0220 size=85.2
+2026-03-07 19:38:21,336 [INFO]     Between $1,600-$1,700 [between]: ask=0.0730 size=40.0
+2026-03-07 19:38:21,336 [INFO]     Above $1,700 YES [above]: ask=0.9600 size=5000.0
+2026-03-07 19:38:21,337 [INFO] 
+BTC march 12: 66 coverings to check
+2026-03-07 19:38:21,338 [INFO]   Best covering cost: 1.0400 (edge: -4.0c)
+2026-03-07 19:38:21,338 [INFO]     Above $70,000 NO [above]: ask=0.7200 size=354.1
+2026-03-07 19:38:21,338 [INFO]     Between $70,000-$72,000 [between]: ask=0.1700 size=110.0
+2026-03-07 19:38:21,338 [INFO]     Above $72,000 YES [above]: ask=0.1500 size=75.1
+2026-03-07 19:38:21,339 [INFO] 
+SOL march 12: 66 coverings to check
+2026-03-07 19:38:21,339 [INFO]   Best covering cost: 1.1620 (edge: -16.2c)
+2026-03-07 19:38:21,339 [INFO]     Above $110 NO [above]: ask=0.9900 size=1.3
+2026-03-07 19:38:21,339 [INFO]     Between $110-$120 [between]: ask=0.1370 size=15.3
+2026-03-07 19:38:21,339 [INFO]     Above $120 YES [above]: ask=0.0350 size=50.0
+2026-03-07 19:38:21,340 [INFO] 
+UNKNOWN march 12: 66 coverings to check
+2026-03-07 19:38:21,341 [INFO]   Best covering cost: 1.1830 (edge: -18.3c)
+2026-03-07 19:38:21,341 [INFO]     Above $2 NO [above]: ask=0.9920 size=30.0
+2026-03-07 19:38:21,341 [INFO]     Between $2-$2 [between]: ask=0.1470 size=23.2
+2026-03-07 19:38:21,341 [INFO]     Above $2 YES [above]: ask=0.0440 size=215.9
+2026-03-07 19:38:21,342 [INFO] 
+ETH march 13: 66 coverings to check
+2026-03-07 19:38:21,342 [INFO]   Best covering cost: 1.0190 (edge: -1.9c)
+2026-03-07 19:38:21,342 [INFO]     Below $1,500 [between]: ask=0.0260 size=25.0
+2026-03-07 19:38:21,342 [INFO]     Above $1,500 YES [above]: ask=0.9930 size=217.1
+2026-03-07 19:38:21,343 [INFO] 
+BTC march 13: 66 coverings to check
+2026-03-07 19:38:21,343 [INFO]   Best covering cost: 1.0200 (edge: -2.0c)
+2026-03-07 19:38:21,343 [INFO]     Above $64,000 NO [above]: ask=0.2300 size=5.0
+2026-03-07 19:38:21,343 [INFO]     Between $64,000-$66,000 [between]: ask=0.1400 size=10.0
+2026-03-07 19:38:21,344 [INFO]     Above $66,000 YES [above]: ask=0.6500 size=117.1
+2026-03-07 19:38:21,344 [INFO] 
+SOL march 13: 66 coverings to check
+2026-03-07 19:38:21,345 [INFO]   Best covering cost: 1.0220 (edge: -2.2c)
+2026-03-07 19:38:21,345 [INFO]     Below $40 [between]: ask=0.0290 size=2925.0
+2026-03-07 19:38:21,345 [INFO]     Above $40 YES [above]: ask=0.9930 size=220.0
+2026-03-07 19:38:21,346 [INFO] 
+UNKNOWN march 13: 66 coverings to check
+2026-03-07 19:38:21,346 [INFO]   Best covering cost: 1.0220 (edge: -2.2c)
+2026-03-07 19:38:21,346 [INFO]     Below $1 [between]: ask=0.0290 size=2930.0
+2026-03-07 19:38:21,346 [INFO]     Above $1 YES [above]: ask=0.9930 size=224.3
+2026-03-07 19:38:21,348 [INFO] 
+ETH march 14: 55 coverings to check
+2026-03-07 19:38:21,348 [INFO]   Best covering cost: 1.9400 (edge: -94.0c)
+2026-03-07 19:38:21,348 [INFO]     Below $1,500 [between]: ask=0.9600 size=25.0
+2026-03-07 19:38:21,349 [INFO]     Above $1,500 YES [above]: ask=0.9800 size=52.5
+2026-03-07 19:38:21,350 [INFO] 
+SOL march 14: 66 coverings to check
+2026-03-07 19:38:21,350 [INFO]   Best covering cost: 1.9200 (edge: -92.0c)
+2026-03-07 19:38:21,350 [INFO]     Below $40 [between]: ask=0.9400 size=39.2
+2026-03-07 19:38:21,350 [INFO]     Above $40 YES [above]: ask=0.9800 size=52.5
+2026-03-07 19:38:21,351 [INFO] 
+UNKNOWN march 14: 66 coverings to check
+2026-03-07 19:38:21,351 [INFO]   Best covering cost: 1.9400 (edge: -94.0c)
+2026-03-07 19:38:21,351 [INFO]     Below $1 [between]: ask=0.9600 size=24.9
+2026-03-07 19:38:21,351 [INFO]     Above $1 YES [above]: ask=0.9800 size=52.5
+2026-03-07 19:38:21,351 [INFO] 
+No arbitrage opportunities found at current prices.
+2026-03-07 19:44:05,793 [INFO] ============================================================
+2026-03-07 19:44:05,793 [INFO] Polymarket Arb Scanner - Snapshot Mode
+2026-03-07 19:44:05,794 [INFO] ============================================================
+2026-03-07 19:44:10,724 [INFO] Found 16 event pairs
+2026-03-07 19:44:10,724 [INFO] Fetching 516 orderbooks...
+2026-03-07 19:44:13,449 [WARNING] Failed to fetch book for 95714512296159852123...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=95714512296159852123804292458791376091893673270603226904946756871860904996233
+2026-03-07 19:48:44,547 [INFO] ============================================================
+2026-03-07 19:48:44,548 [INFO] Polymarket Arb Scanner - Snapshot Mode
+2026-03-07 19:48:44,548 [INFO] ============================================================
+2026-03-07 19:48:49,402 [INFO] Found 16 event pairs
+2026-03-07 19:48:49,403 [INFO] Fetching 516 orderbooks...
+2026-03-07 19:48:55,386 [WARNING] Failed to fetch book for 10283582253835843942...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=102835822538358439420409554041039677939593409709293134515774821322811144874432
+2026-03-07 19:48:58,035 [WARNING] Failed to fetch book for 68232897591836918208...: 404 Client Error: Not Found for url: https://clob.polymarket.com/book?token_id=68232897591836918208305466836869537901980996595370794783712631121735745345092
+2026-03-07 19:48:58,129 [INFO]   Fetched 50/516 orderbooks...
+2026-03-07 19:50:09,208 [INFO] ============================================================
+2026-03-07 19:50:09,209 [INFO] Polymarket Arb Scanner - Snapshot Mode
+2026-03-07 19:50:09,209 [INFO] ============================================================
+2026-03-07 19:50:14,313 [INFO] Found 14 event pairs
+2026-03-07 19:50:14,314 [INFO] Fetching 458 orderbooks...
+2026-03-07 19:50:23,138 [INFO]   Fetched 50/458 orderbooks...
+2026-03-07 19:50:29,003 [INFO]   Fetched 100/458 orderbooks...
+2026-03-07 19:50:36,971 [INFO]   Fetched 150/458 orderbooks...
+2026-03-07 19:50:43,093 [INFO]   Fetched 200/458 orderbooks...
+2026-03-07 19:50:51,519 [INFO]   Fetched 250/458 orderbooks...
+2026-03-07 19:50:58,495 [INFO]   Fetched 300/458 orderbooks...
+2026-03-07 19:51:06,224 [INFO]   Fetched 350/458 orderbooks...
+2026-03-07 19:51:13,262 [INFO]   Fetched 400/458 orderbooks...
+2026-03-07 19:51:20,414 [INFO]   Fetched 450/458 orderbooks...
+2026-03-07 19:51:20,971 [INFO] 
+BITCOIN march 8: 66 coverings to check
+2026-03-07 19:51:20,971 [INFO]   Best covering cost: 1.0010 (edge: -0.1c)
+2026-03-07 19:51:20,971 [INFO]     Above $76,000 NO [above]: ask=0.9990 size=40423.6
+2026-03-07 19:51:20,971 [INFO]     Above $76,000 [between]: ask=0.0020 size=13555.2
+2026-03-07 19:51:20,973 [INFO] 
+BITCOIN march 9: 66 coverings to check
+2026-03-07 19:51:20,973 [INFO]   Best covering cost: 0.9960 (edge: 0.4c)
+2026-03-07 19:51:20,973 [INFO]     Below $60,000 [between]: ask=0.0040 size=67.3
+2026-03-07 19:51:20,973 [INFO]     Above $60,000 YES [above]: ask=0.9920 size=219.3
+2026-03-07 19:51:20,974 [INFO] 
+BITCOIN march 10: 66 coverings to check
+2026-03-07 19:51:20,974 [INFO]   Best covering cost: 1.0050 (edge: -0.5c)
+2026-03-07 19:51:20,974 [INFO]     Above $78,000 NO [above]: ask=0.9970 size=462.2
+2026-03-07 19:51:20,975 [INFO]     Above $78,000 [between]: ask=0.0080 size=54.3
+2026-03-07 19:51:20,977 [INFO] 
+BITCOIN march 11: 66 coverings to check
+2026-03-07 19:51:20,977 [INFO]   Best covering cost: 1.0070 (edge: -0.7c)
+2026-03-07 19:51:20,977 [INFO]     Above $82,000 NO [above]: ask=0.9930 size=14.2
+2026-03-07 19:51:20,977 [INFO]     Above $82,000 [between]: ask=0.0140 size=20.4
+2026-03-07 19:51:20,979 [INFO] 
+BITCOIN march 12: 66 coverings to check
+2026-03-07 19:51:20,980 [INFO]   Best covering cost: 1.0400 (edge: -4.0c)
+2026-03-07 19:51:20,980 [INFO]     Above $64,000 NO [above]: ask=0.2000 size=25.0
+2026-03-07 19:51:20,980 [INFO]     Between $64,000-$66,000 [between]: ask=0.1900 size=10.0
+2026-03-07 19:51:20,980 [INFO]     Above $66,000 YES [above]: ask=0.6500 size=99.5
+2026-03-07 19:51:20,981 [INFO] 
+BITCOIN march 13: 66 coverings to check
+2026-03-07 19:51:20,981 [INFO]   Best covering cost: 1.0300 (edge: -3.0c)
+2026-03-07 19:51:20,981 [INFO]     Below $60,000 [between]: ask=0.0900 size=10.0
+2026-03-07 19:51:20,982 [INFO]     Above $60,000 YES [above]: ask=0.9400 size=397.1
+2026-03-07 19:51:20,983 [INFO] 
+ETHEREUM march 7: 55 coverings to check
+2026-03-07 19:51:20,983 [INFO] 
+ETHEREUM march 8: 66 coverings to check
+2026-03-07 19:51:20,984 [INFO]   Best covering cost: 1.0020 (edge: -0.2c)
+2026-03-07 19:51:20,984 [INFO]     Above $1,500 NO [above]: ask=0.0010 size=1010.0
+2026-03-07 19:51:20,984 [INFO]     Between $1,500-$1,600 [between]: ask=0.0020 size=7583.3
+2026-03-07 19:51:20,984 [INFO]     Above $1,600 YES [above]: ask=0.9990 size=4808.8
+2026-03-07 19:51:20,985 [INFO] 
+ETHEREUM march 9: 66 coverings to check
+2026-03-07 19:51:20,985 [INFO]   Best covering cost: 1.0080 (edge: -0.8c)
+2026-03-07 19:51:20,985 [INFO]     Below $1,600 [between]: ask=0.0160 size=51.0
+2026-03-07 19:51:20,985 [INFO]     Above $1,600 YES [above]: ask=0.9920 size=137.5
+2026-03-07 19:51:20,986 [INFO] 
+ETHEREUM march 10: 66 coverings to check
+2026-03-07 19:51:20,986 [INFO]   Best covering cost: 0.9980 (edge: 0.2c)
+2026-03-07 19:51:20,986 [INFO]     Above $2,400 NO [above]: ask=0.9920 size=9.3
+2026-03-07 19:51:20,986 [INFO]     Above $2,400 [between]: ask=0.0060 size=200.0
+2026-03-07 19:51:20,988 [INFO] 
+ETHEREUM march 11: 66 coverings to check
+2026-03-07 19:51:20,988 [INFO]   Best covering cost: 1.0140 (edge: -1.4c)
+2026-03-07 19:51:20,988 [INFO]     Above $2,300 NO [above]: ask=0.9780 size=6.3
+2026-03-07 19:51:20,988 [INFO]     Between $2,300-$2,400 [between]: ask=0.0270 size=42.3
+2026-03-07 19:51:20,988 [INFO]     Above $2,400 YES [above]: ask=0.0090 size=218.9
+2026-03-07 19:51:20,989 [INFO] 
+ETHEREUM march 12: 66 coverings to check
+2026-03-07 19:51:20,990 [INFO]   Best covering cost: 1.0550 (edge: -5.5c)
+2026-03-07 19:51:20,990 [INFO]     Above $1,600 NO [above]: ask=0.0220 size=85.2
+2026-03-07 19:51:20,990 [INFO]     Between $1,600-$1,700 [between]: ask=0.0730 size=40.0
+2026-03-07 19:51:20,990 [INFO]     Above $1,700 YES [above]: ask=0.9600 size=5000.0
+2026-03-07 19:51:20,991 [INFO] 
+ETHEREUM march 13: 66 coverings to check
+2026-03-07 19:51:20,992 [INFO]   Best covering cost: 1.0420 (edge: -4.2c)
+2026-03-07 19:51:20,992 [INFO]     Above $2,400 NO [above]: ask=0.9890 size=27.1
+2026-03-07 19:51:20,992 [INFO]     Above $2,400 [between]: ask=0.0530 size=40.0
+2026-03-07 19:51:20,993 [INFO] 
+ETHEREUM march 14: 55 coverings to check
+2026-03-07 19:51:20,994 [INFO]   Best covering cost: 1.8890 (edge: -88.9c)
+2026-03-07 19:51:20,994 [INFO]     Below $1,500 [between]: ask=0.8900 size=24.0
+2026-03-07 19:51:20,994 [INFO]     Above $1,500 YES [above]: ask=0.9990 size=1030.0
+2026-03-07 19:51:20,994 [INFO] 
+No arbitrage opportunities found at current prices.
+2026-03-07 19:54:37,218 [INFO] ============================================================
+2026-03-07 19:54:37,219 [INFO] Polymarket Arb Scanner - Snapshot Mode
+2026-03-07 19:54:37,219 [INFO] ============================================================
+2026-03-07 19:54:46,502 [INFO] Found 30 event pairs
+2026-03-07 19:54:46,503 [INFO] Fetching 986 orderbooks...
+2026-03-07 19:54:55,217 [INFO]   Fetched 50/986 orderbooks...
+2026-03-07 19:55:01,244 [INFO]   Fetched 100/986 orderbooks...
+2026-03-07 19:55:09,815 [INFO]   Fetched 150/986 orderbooks...
+2026-03-07 19:55:15,592 [INFO]   Fetched 200/986 orderbooks...
+2026-03-07 19:55:23,686 [INFO]   Fetched 250/986 orderbooks...
+2026-03-07 19:55:30,057 [INFO]   Fetched 300/986 orderbooks...
+2026-03-07 19:55:37,908 [INFO]   Fetched 350/986 orderbooks...
+2026-03-07 19:55:45,292 [INFO]   Fetched 400/986 orderbooks...
+2026-03-07 19:55:52,506 [INFO]   Fetched 450/986 orderbooks...
+2026-03-07 19:55:59,946 [INFO]   Fetched 500/986 orderbooks...
+2026-03-07 19:56:06,615 [INFO]   Fetched 550/986 orderbooks...
+2026-03-07 19:56:14,658 [INFO]   Fetched 600/986 orderbooks...
+2026-03-07 19:56:21,461 [INFO]   Fetched 650/986 orderbooks...
+2026-03-07 19:56:29,403 [INFO]   Fetched 700/986 orderbooks...
+2026-03-07 19:56:36,502 [INFO]   Fetched 750/986 orderbooks...
+2026-03-07 19:56:44,122 [INFO]   Fetched 800/986 orderbooks...
+2026-03-07 19:56:51,604 [INFO]   Fetched 850/986 orderbooks...
+2026-03-07 19:56:58,541 [INFO]   Fetched 900/986 orderbooks...
+2026-03-07 19:57:06,509 [INFO]   Fetched 950/986 orderbooks...
+2026-03-07 19:57:10,360 [INFO] 
+BITCOIN march 8: 66 coverings to check
+2026-03-07 19:57:10,361 [INFO]   Best covering cost: 1.0010 (edge: -0.1c)
+2026-03-07 19:57:10,361 [INFO]     Above $76,000 NO [above]: ask=0.9990 size=40423.6
+2026-03-07 19:57:10,362 [INFO]     Above $76,000 [between]: ask=0.0020 size=13565.2
+2026-03-07 19:57:10,364 [INFO] 
+BITCOIN march 9: 66 coverings to check
+2026-03-07 19:57:10,365 [INFO]   Best covering cost: 0.9960 (edge: 0.4c)
+2026-03-07 19:57:10,365 [INFO]     Below $60,000 [between]: ask=0.0040 size=67.3
+2026-03-07 19:57:10,365 [INFO]     Above $60,000 YES [above]: ask=0.9920 size=219.3
+2026-03-07 19:57:10,368 [INFO] 
+BITCOIN march 10: 66 coverings to check
+2026-03-07 19:57:10,369 [INFO]   Best covering cost: 1.0050 (edge: -0.5c)
+2026-03-07 19:57:10,369 [INFO]     Above $78,000 NO [above]: ask=0.9970 size=462.2
+2026-03-07 19:57:10,370 [INFO]     Above $78,000 [between]: ask=0.0080 size=54.3
+2026-03-07 19:57:10,371 [INFO] 
+BITCOIN march 11: 66 coverings to check
+2026-03-07 19:57:10,372 [INFO]   Best covering cost: 1.0060 (edge: -0.6c)
+2026-03-07 19:57:10,373 [INFO]     Above $82,000 NO [above]: ask=0.9920 size=7.0
+2026-03-07 19:57:10,379 [INFO]     Above $82,000 [between]: ask=0.0140 size=20.4
+2026-03-07 19:57:10,390 [INFO] 
+BITCOIN march 12: 66 coverings to check
+2026-03-07 19:57:10,392 [INFO]   Best covering cost: 1.0400 (edge: -4.0c)
+2026-03-07 19:57:10,393 [INFO]     Above $64,000 NO [above]: ask=0.2000 size=25.0
+2026-03-07 19:57:10,397 [INFO]     Between $64,000-$66,000 [between]: ask=0.1900 size=10.0
+2026-03-07 19:57:10,397 [INFO]     Above $66,000 YES [above]: ask=0.6500 size=99.5
+2026-03-07 19:57:10,399 [INFO] 
+BITCOIN march 13: 66 coverings to check
+2026-03-07 19:57:10,400 [INFO]   Best covering cost: 1.0300 (edge: -3.0c)
+2026-03-07 19:57:10,400 [INFO]     Below $60,000 [between]: ask=0.0900 size=10.0
+2026-03-07 19:57:10,400 [INFO]     Above $60,000 YES [above]: ask=0.9400 size=1081.7
+2026-03-07 19:57:10,403 [INFO] 
+ETHEREUM march 7: 55 coverings to check
+2026-03-07 19:57:10,405 [INFO] 
+ETHEREUM march 8: 66 coverings to check
+2026-03-07 19:57:10,405 [INFO]   Best covering cost: 1.0020 (edge: -0.2c)
+2026-03-07 19:57:10,406 [INFO]     Above $1,500 NO [above]: ask=0.0010 size=1210.0
+2026-03-07 19:57:10,406 [INFO]     Between $1,500-$1,600 [between]: ask=0.0020 size=7583.3
+2026-03-07 19:57:10,406 [INFO]     Above $1,600 YES [above]: ask=0.9990 size=4677.5
+2026-03-07 19:57:10,409 [INFO] 
+ETHEREUM march 9: 66 coverings to check
+2026-03-07 19:57:10,413 [INFO]   Best covering cost: 1.0090 (edge: -0.9c)
+2026-03-07 19:57:10,413 [INFO]     Above $2,500 NO [above]: ask=0.9970 size=61.8
+2026-03-07 19:57:10,414 [INFO]     Above $2,500 [between]: ask=0.0120 size=40.2
+2026-03-07 19:57:10,416 [INFO] 
+ETHEREUM march 10: 66 coverings to check
+2026-03-07 19:57:10,417 [INFO]   Best covering cost: 0.9990 (edge: 0.1c)
+2026-03-07 19:57:10,418 [INFO]     Above $2,400 NO [above]: ask=0.9930 size=160.0
+2026-03-07 19:57:10,418 [INFO]     Above $2,400 [between]: ask=0.0060 size=200.0
+2026-03-07 19:57:10,420 [INFO] 
+ETHEREUM march 11: 66 coverings to check
+2026-03-07 19:57:10,421 [INFO]   Best covering cost: 1.0100 (edge: -1.0c)
+2026-03-07 19:57:10,422 [INFO]     Below $1,700 [between]: ask=0.0450 size=6.3
+2026-03-07 19:57:10,422 [INFO]     Above $1,700 YES [above]: ask=0.9650 size=226.3
+2026-03-07 19:57:10,425 [INFO] 
+ETHEREUM march 12: 66 coverings to check
+2026-03-07 19:57:10,426 [INFO]   Best covering cost: 1.0550 (edge: -5.5c)
+2026-03-07 19:57:10,427 [INFO]     Above $1,600 NO [above]: ask=0.0220 size=85.2
+2026-03-07 19:57:10,428 [INFO]     Between $1,600-$1,700 [between]: ask=0.0730 size=40.0
+2026-03-07 19:57:10,429 [INFO]     Above $1,700 YES [above]: ask=0.9600 size=5000.0
+2026-03-07 19:57:10,431 [INFO] 
+ETHEREUM march 13: 66 coverings to check
+2026-03-07 19:57:10,433 [INFO]   Best covering cost: 1.0420 (edge: -4.2c)
+2026-03-07 19:57:10,434 [INFO]     Above $2,400 NO [above]: ask=0.9890 size=27.1
+2026-03-07 19:57:10,434 [INFO]     Above $2,400 [between]: ask=0.0530 size=40.0
+2026-03-07 19:57:10,438 [INFO] 
+ETHEREUM march 14: 55 coverings to check
+2026-03-07 19:57:10,438 [INFO]   Best covering cost: 1.8880 (edge: -88.8c)
+2026-03-07 19:57:10,439 [INFO]     Below $1,500 [between]: ask=0.8890 size=14.4
+2026-03-07 19:57:10,439 [INFO]     Above $1,500 YES [above]: ask=0.9990 size=3030.0
+2026-03-07 19:57:10,441 [INFO] 
+SOLANA march 7: 66 coverings to check
+2026-03-07 19:57:10,443 [INFO] 
+SOLANA march 8: 66 coverings to check
+2026-03-07 19:57:10,447 [INFO]   Best covering cost: 1.0070 (edge: -0.7c)
+2026-03-07 19:57:10,447 [INFO]     Above $50 NO [above]: ask=0.0010 size=2430.7
+2026-03-07 19:57:10,448 [INFO]     Between $50-$60 [between]: ask=0.0050 size=8000.0
+2026-03-07 19:57:10,448 [INFO]     Between $60-$70 [between]: ask=0.0020 size=2000.0
+2026-03-07 19:57:10,448 [INFO]     Above $70 YES [above]: ask=0.9990 size=3743.7
+2026-03-07 19:57:10,451 [INFO] 
+SOLANA march 9: 66 coverings to check
+2026-03-07 19:57:10,453 [INFO]   Best covering cost: 1.0080 (edge: -0.8c)
+2026-03-07 19:57:10,454 [INFO]     Below $40 [between]: ask=0.0090 size=55.0
+2026-03-07 19:57:10,454 [INFO]     Above $40 YES [above]: ask=0.9990 size=1.8
+2026-03-07 19:57:10,456 [INFO] 
+SOLANA march 10: 66 coverings to check
+2026-03-07 19:57:10,456 [INFO]   Best covering cost: 1.0200 (edge: -2.0c)
+2026-03-07 19:57:10,456 [INFO]     Below $40 [between]: ask=0.0220 size=50.0
+2026-03-07 19:57:10,457 [INFO]     Above $40 YES [above]: ask=0.9980 size=235.5
+2026-03-07 19:57:10,458 [INFO] 
+SOLANA march 11: 66 coverings to check
+2026-03-07 19:57:10,459 [INFO]   Best covering cost: 1.0100 (edge: -1.0c)
+2026-03-07 19:57:10,459 [INFO]     Below $50 [between]: ask=0.0200 size=3433.1
+2026-03-07 19:57:10,460 [INFO]     Above $50 YES [above]: ask=0.9900 size=8.5
+2026-03-07 19:57:10,463 [INFO] 
+SOLANA march 12: 66 coverings to check
+2026-03-07 19:57:10,464 [INFO]   Best covering cost: 1.1620 (edge: -16.2c)
+2026-03-07 19:57:10,465 [INFO]     Above $110 NO [above]: ask=0.9900 size=1.3
+2026-03-07 19:57:10,465 [INFO]     Between $110-$120 [between]: ask=0.1370 size=15.3
+2026-03-07 19:57:10,465 [INFO]     Above $120 YES [above]: ask=0.0350 size=50.0
+2026-03-07 19:57:10,467 [INFO] 
+SOLANA march 13: 66 coverings to check
+2026-03-07 19:57:10,470 [INFO]   Best covering cost: 1.0280 (edge: -2.8c)
+2026-03-07 19:57:10,471 [INFO]     Above $40 NO [above]: ask=0.0250 size=7.5
+2026-03-07 19:57:10,472 [INFO]     Between $40-$50 [between]: ask=0.0100 size=110.0
+2026-03-07 19:57:10,472 [INFO]     Above $50 YES [above]: ask=0.9930 size=228.6
+2026-03-07 19:57:10,474 [INFO] 
+SOLANA march 14: 66 coverings to check
+2026-03-07 19:57:10,474 [INFO]   Best covering cost: 1.9100 (edge: -91.0c)
+2026-03-07 19:57:10,474 [INFO]     Below $40 [between]: ask=0.9200 size=24.4
+2026-03-07 19:57:10,475 [INFO]     Above $40 YES [above]: ask=0.9900 size=0.3
+2026-03-07 19:57:10,477 [INFO] 
+XRP march 7: 66 coverings to check
+2026-03-07 19:57:10,479 [INFO] 
+XRP march 8: 66 coverings to check
+2026-03-07 19:57:10,480 [INFO]   Best covering cost: 1.0020 (edge: -0.2c)
+2026-03-07 19:57:10,480 [INFO]     Above $2 NO [above]: ask=0.9990 size=5102.0
+2026-03-07 19:57:10,481 [INFO]     Between $2-$2 [between]: ask=0.0020 size=2402.5
+2026-03-07 19:57:10,481 [INFO]     Above $2 YES [above]: ask=0.0010 size=284.9
+2026-03-07 19:57:10,483 [INFO] 
+XRP march 9: 66 coverings to check
+2026-03-07 19:57:10,490 [INFO]   Best covering cost: 1.0130 (edge: -1.3c)
+2026-03-07 19:57:10,491 [INFO]     Below $1 [between]: ask=0.0160 size=2930.0
+2026-03-07 19:57:10,493 [INFO]     Above $1 YES [above]: ask=0.9970 size=200.0
+2026-03-07 19:57:10,500 [INFO] 
+XRP march 10: 66 coverings to check
+2026-03-07 19:57:10,502 [INFO]   Best covering cost: 1.0010 (edge: -0.1c)
+2026-03-07 19:57:10,502 [INFO]     Below $1 [between]: ask=0.0080 size=29.9
+2026-03-07 19:57:10,503 [INFO]     Above $1 YES [above]: ask=0.9930 size=198.5
+2026-03-07 19:57:10,505 [INFO] 
+XRP march 11: 66 coverings to check
+2026-03-07 19:57:10,506 [INFO]   Best covering cost: 1.0200 (edge: -2.0c)
+2026-03-07 19:57:10,507 [INFO]     Below $1 [between]: ask=0.0300 size=14.2
+2026-03-07 19:57:10,507 [INFO]     Above $1 YES [above]: ask=0.9900 size=13.3
+2026-03-07 19:57:10,509 [INFO] 
+XRP march 12: 66 coverings to check
+2026-03-07 19:57:10,509 [INFO]   Best covering cost: 1.1830 (edge: -18.3c)
+2026-03-07 19:57:10,509 [INFO]     Above $2 NO [above]: ask=0.9920 size=30.0
+2026-03-07 19:57:10,510 [INFO]     Between $2-$2 [between]: ask=0.1470 size=23.2
+2026-03-07 19:57:10,510 [INFO]     Above $2 YES [above]: ask=0.0440 size=215.9
+2026-03-07 19:57:10,512 [INFO] 
+XRP march 13: 66 coverings to check
+2026-03-07 19:57:10,513 [INFO]   Best covering cost: 1.0220 (edge: -2.2c)
+2026-03-07 19:57:10,513 [INFO]     Below $1 [between]: ask=0.0290 size=5.0
+2026-03-07 19:57:10,514 [INFO]     Above $1 YES [above]: ask=0.9930 size=224.3
+2026-03-07 19:57:10,517 [INFO] 
+XRP march 14: 66 coverings to check
+2026-03-07 19:57:10,518 [INFO]   Best covering cost: 1.9500 (edge: -95.0c)
+2026-03-07 19:57:10,518 [INFO]     Below $1 [between]: ask=0.9600 size=49.3
+2026-03-07 19:57:10,518 [INFO]     Above $1 YES [above]: ask=0.9900 size=0.2
+2026-03-07 19:57:10,519 [INFO] 
+No arbitrage opportunities found at current prices.
+2026-03-07 19:58:13,090 [INFO] ============================================================
+2026-03-07 19:58:13,091 [INFO] Polymarket Above/Between Arbitrage Scanner
+2026-03-07 19:58:13,091 [INFO] ============================================================
+2026-03-07 19:58:13,091 [INFO] Discovering events...
+2026-03-07 19:58:22,777 [INFO] Found 30 event pairs:
+2026-03-07 19:58:22,779 [INFO]   BITCOIN march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,780 [INFO]   BITCOIN march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,781 [INFO]   BITCOIN march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,782 [INFO]   BITCOIN march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,783 [INFO]   BITCOIN march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,785 [INFO]   BITCOIN march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,786 [INFO]   ETHEREUM march 7: 9 between + 10 above markets, 55 possible coverings
+2026-03-07 19:58:22,787 [INFO]   ETHEREUM march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,788 [INFO]   ETHEREUM march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,789 [INFO]   ETHEREUM march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,790 [INFO]   ETHEREUM march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,790 [INFO]   ETHEREUM march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,791 [INFO]   ETHEREUM march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,791 [INFO]   ETHEREUM march 14: 9 between + 10 above markets, 55 possible coverings
+2026-03-07 19:58:22,793 [INFO]   SOLANA march 7: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,793 [INFO]   SOLANA march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,794 [INFO]   SOLANA march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,794 [INFO]   SOLANA march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,796 [INFO]   SOLANA march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,796 [INFO]   SOLANA march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,798 [INFO]   SOLANA march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,799 [INFO]   SOLANA march 14: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,801 [INFO]   XRP march 7: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,802 [INFO]   XRP march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,805 [INFO]   XRP march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,806 [INFO]   XRP march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,807 [INFO]   XRP march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,807 [INFO]   XRP march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,808 [INFO]   XRP march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,809 [INFO]   XRP march 14: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 19:58:22,809 [INFO] Tracking 986 tokens
+2026-03-07 19:58:22,810 [INFO] Connecting to WebSocket...
+2026-03-07 19:58:23,042 [INFO]   Subscribed to tokens 1-50
+2026-03-07 19:58:23,045 [INFO]   Subscribed to tokens 51-100
+2026-03-07 19:58:23,048 [INFO]   Subscribed to tokens 101-150
+2026-03-07 19:58:23,051 [INFO]   Subscribed to tokens 151-200
+2026-03-07 19:58:23,051 [INFO]   Subscribed to tokens 201-250
+2026-03-07 19:58:23,052 [INFO]   Subscribed to tokens 251-300
+2026-03-07 19:58:23,053 [INFO]   Subscribed to tokens 301-350
+2026-03-07 19:58:23,053 [INFO]   Subscribed to tokens 351-400
+2026-03-07 19:58:23,053 [INFO]   Subscribed to tokens 401-450
+2026-03-07 19:58:23,054 [INFO]   Subscribed to tokens 451-500
+2026-03-07 19:58:23,054 [INFO]   Subscribed to tokens 501-550
+2026-03-07 19:58:23,055 [INFO]   Subscribed to tokens 551-600
+2026-03-07 19:58:23,055 [INFO]   Subscribed to tokens 601-650
+2026-03-07 19:58:23,056 [INFO]   Subscribed to tokens 651-700
+2026-03-07 19:58:23,056 [INFO]   Subscribed to tokens 701-750
+2026-03-07 19:58:23,058 [INFO]   Subscribed to tokens 751-800
+2026-03-07 19:58:23,060 [INFO]   Subscribed to tokens 801-850
+2026-03-07 19:58:23,061 [INFO]   Subscribed to tokens 851-900
+2026-03-07 19:58:23,061 [INFO]   Subscribed to tokens 901-950
+2026-03-07 19:58:23,062 [INFO]   Subscribed to tokens 951-986
+2026-03-07 19:58:23,062 [INFO] Waiting for initial book snapshots...
+2026-03-07 19:58:23,147 [INFO]   Loaded 50/986 books from WS snapshots
+2026-03-07 20:05:20,063 [INFO] ============================================================
+2026-03-07 20:05:20,064 [INFO] Polymarket Above/Between Arbitrage Scanner
+2026-03-07 20:05:20,064 [INFO] ============================================================
+2026-03-07 20:05:20,064 [INFO] Discovering events...
+2026-03-07 20:05:29,920 [INFO] Found 30 event pairs:
+2026-03-07 20:05:29,925 [INFO]   BITCOIN march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,926 [INFO]   BITCOIN march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,927 [INFO]   BITCOIN march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,927 [INFO]   BITCOIN march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,928 [INFO]   BITCOIN march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,929 [INFO]   BITCOIN march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,930 [INFO]   ETHEREUM march 7: 9 between + 10 above markets, 55 possible coverings
+2026-03-07 20:05:29,931 [INFO]   ETHEREUM march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,932 [INFO]   ETHEREUM march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,933 [INFO]   ETHEREUM march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,933 [INFO]   ETHEREUM march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,934 [INFO]   ETHEREUM march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,935 [INFO]   ETHEREUM march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,936 [INFO]   ETHEREUM march 14: 9 between + 10 above markets, 55 possible coverings
+2026-03-07 20:05:29,938 [INFO]   SOLANA march 7: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,946 [INFO]   SOLANA march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,949 [INFO]   SOLANA march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,952 [INFO]   SOLANA march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,955 [INFO]   SOLANA march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,959 [INFO]   SOLANA march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,960 [INFO]   SOLANA march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,961 [INFO]   SOLANA march 14: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,962 [INFO]   XRP march 7: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,963 [INFO]   XRP march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,965 [INFO]   XRP march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,965 [INFO]   XRP march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,966 [INFO]   XRP march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,968 [INFO]   XRP march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,970 [INFO]   XRP march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,976 [INFO]   XRP march 14: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:05:29,979 [INFO] Tracking 986 tokens
+2026-03-07 20:05:29,980 [INFO] Connecting to WebSocket...
+2026-03-07 20:05:30,285 [INFO]   Subscribed to tokens 1-50
+2026-03-07 20:05:30,286 [INFO]   Subscribed to tokens 51-100
+2026-03-07 20:05:30,286 [INFO]   Subscribed to tokens 101-150
+2026-03-07 20:05:30,287 [INFO]   Subscribed to tokens 151-200
+2026-03-07 20:05:30,287 [INFO]   Subscribed to tokens 201-250
+2026-03-07 20:05:30,288 [INFO]   Subscribed to tokens 251-300
+2026-03-07 20:05:30,288 [INFO]   Subscribed to tokens 301-350
+2026-03-07 20:05:30,289 [INFO]   Subscribed to tokens 351-400
+2026-03-07 20:05:30,289 [INFO]   Subscribed to tokens 401-450
+2026-03-07 20:05:30,290 [INFO]   Subscribed to tokens 451-500
+2026-03-07 20:05:30,290 [INFO]   Subscribed to tokens 501-550
+2026-03-07 20:05:30,291 [INFO]   Subscribed to tokens 551-600
+2026-03-07 20:05:30,291 [INFO]   Subscribed to tokens 601-650
+2026-03-07 20:05:30,292 [INFO]   Subscribed to tokens 651-700
+2026-03-07 20:05:30,293 [INFO]   Subscribed to tokens 701-750
+2026-03-07 20:05:30,294 [INFO]   Subscribed to tokens 751-800
+2026-03-07 20:05:30,294 [INFO]   Subscribed to tokens 801-850
+2026-03-07 20:05:30,295 [INFO]   Subscribed to tokens 851-900
+2026-03-07 20:05:30,295 [INFO]   Subscribed to tokens 901-950
+2026-03-07 20:05:30,296 [INFO]   Subscribed to tokens 951-986
+2026-03-07 20:05:30,296 [INFO] Waiting for initial book snapshots...
+2026-03-07 20:05:30,400 [INFO]   Loaded 50/986 books from WS snapshots
+2026-03-07 20:05:32,400 [INFO]   Loaded 57/986 books from WS snapshots
+2026-03-07 20:05:34,411 [INFO]   Loaded 66/986 books from WS snapshots
+2026-03-07 20:05:36,541 [INFO]   Loaded 67/986 books from WS snapshots
+2026-03-07 20:05:38,582 [INFO]   Loaded 69/986 books from WS snapshots
+2026-03-07 20:05:41,153 [INFO]   Loaded 70/986 books from WS snapshots
+2026-03-07 20:05:43,219 [INFO]   Loaded 70/986 books from WS snapshots
+2026-03-07 20:05:45,670 [INFO]   Loaded 70/986 books from WS snapshots
+2026-03-07 20:05:45,671 [INFO] Snapshots ready (70/986 books). Running first arb check...
+2026-03-07 20:05:45,674 [INFO]   BITCOIN march 8: no arb at current prices
+2026-03-07 20:05:45,677 [INFO]   BITCOIN march 9: no arb at current prices
+2026-03-07 20:05:45,679 [INFO]   BITCOIN march 10: no arb at current prices
+2026-03-07 20:05:45,681 [INFO]   BITCOIN march 11: no arb at current prices
+2026-03-07 20:05:45,683 [INFO]   BITCOIN march 12: no arb at current prices
+2026-03-07 20:05:45,684 [INFO]   BITCOIN march 13: no arb at current prices
+2026-03-07 20:05:45,686 [INFO]   ETHEREUM march 7: no arb at current prices
+2026-03-07 20:05:45,687 [INFO]   ETHEREUM march 8: no arb at current prices
+2026-03-07 20:05:45,693 [INFO]   ETHEREUM march 9: no arb at current prices
+2026-03-07 20:05:45,695 [INFO]   ETHEREUM march 10: no arb at current prices
+2026-03-07 20:05:45,698 [INFO]   ETHEREUM march 11: no arb at current prices
+2026-03-07 20:05:45,700 [INFO]   ETHEREUM march 12: no arb at current prices
+2026-03-07 20:05:45,701 [INFO]   ETHEREUM march 13: no arb at current prices
+2026-03-07 20:05:45,702 [INFO]   ETHEREUM march 14: no arb at current prices
+2026-03-07 20:05:45,703 [INFO]   SOLANA march 7: no arb at current prices
+2026-03-07 20:05:45,704 [INFO]   SOLANA march 8: no arb at current prices
+2026-03-07 20:05:45,709 [INFO]   SOLANA march 9: no arb at current prices
+2026-03-07 20:05:45,711 [INFO]   SOLANA march 10: no arb at current prices
+2026-03-07 20:05:45,713 [INFO]   SOLANA march 11: no arb at current prices
+2026-03-07 20:05:45,714 [INFO]   SOLANA march 12: no arb at current prices
+2026-03-07 20:05:45,716 [INFO]   SOLANA march 13: no arb at current prices
+2026-03-07 20:05:45,717 [INFO]   SOLANA march 14: no arb at current prices
+2026-03-07 20:05:45,718 [INFO]   XRP march 7: no arb at current prices
+2026-03-07 20:05:45,720 [INFO]   XRP march 8: no arb at current prices
+2026-03-07 20:05:45,724 [INFO]   XRP march 9: no arb at current prices
+2026-03-07 20:05:45,727 [INFO]   XRP march 10: no arb at current prices
+2026-03-07 20:05:45,729 [INFO]   XRP march 11: no arb at current prices
+2026-03-07 20:05:45,731 [INFO]   XRP march 12: no arb at current prices
+2026-03-07 20:05:45,732 [INFO]   XRP march 13: no arb at current prices
+2026-03-07 20:05:45,734 [INFO]   XRP march 14: no arb at current prices
+2026-03-07 20:05:45,734 [INFO] Streaming orderbook updates... (Ctrl+C to stop)
+2026-03-07 20:09:18,176 [INFO] ============================================================
+2026-03-07 20:09:18,177 [INFO] Polymarket Above/Between Arbitrage Scanner
+2026-03-07 20:09:18,178 [INFO] ============================================================
+2026-03-07 20:09:18,178 [INFO] Discovering events...
+2026-03-07 20:09:28,183 [INFO] Found 30 event pairs:
+2026-03-07 20:09:28,184 [INFO]   BITCOIN march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,185 [INFO]   BITCOIN march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,186 [INFO]   BITCOIN march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,187 [INFO]   BITCOIN march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,188 [INFO]   BITCOIN march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,188 [INFO]   BITCOIN march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,189 [INFO]   ETHEREUM march 7: 9 between + 10 above markets, 55 possible coverings
+2026-03-07 20:09:28,190 [INFO]   ETHEREUM march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,191 [INFO]   ETHEREUM march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,193 [INFO]   ETHEREUM march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,195 [INFO]   ETHEREUM march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,196 [INFO]   ETHEREUM march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,197 [INFO]   ETHEREUM march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,198 [INFO]   ETHEREUM march 14: 9 between + 10 above markets, 55 possible coverings
+2026-03-07 20:09:28,199 [INFO]   SOLANA march 7: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,199 [INFO]   SOLANA march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,200 [INFO]   SOLANA march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,201 [INFO]   SOLANA march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,203 [INFO]   SOLANA march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,206 [INFO]   SOLANA march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,206 [INFO]   SOLANA march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,207 [INFO]   SOLANA march 14: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,209 [INFO]   XRP march 7: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,211 [INFO]   XRP march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,212 [INFO]   XRP march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,212 [INFO]   XRP march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,213 [INFO]   XRP march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,214 [INFO]   XRP march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,214 [INFO]   XRP march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,215 [INFO]   XRP march 14: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:09:28,216 [INFO] Tracking 986 tokens
+2026-03-07 20:09:28,217 [INFO] Connecting to WebSocket...
+2026-03-07 20:09:28,546 [INFO]   Subscribed to tokens 1-50
+2026-03-07 20:09:28,547 [INFO]   Subscribed to tokens 51-100
+2026-03-07 20:09:28,548 [INFO]   Subscribed to tokens 101-150
+2026-03-07 20:09:28,549 [INFO]   Subscribed to tokens 151-200
+2026-03-07 20:09:28,549 [INFO]   Subscribed to tokens 201-250
+2026-03-07 20:09:28,550 [INFO]   Subscribed to tokens 251-300
+2026-03-07 20:09:28,550 [INFO]   Subscribed to tokens 301-350
+2026-03-07 20:09:28,550 [INFO]   Subscribed to tokens 351-400
+2026-03-07 20:09:28,551 [INFO]   Subscribed to tokens 401-450
+2026-03-07 20:09:28,551 [INFO]   Subscribed to tokens 451-500
+2026-03-07 20:09:28,552 [INFO]   Subscribed to tokens 501-550
+2026-03-07 20:09:28,552 [INFO]   Subscribed to tokens 551-600
+2026-03-07 20:09:28,553 [INFO]   Subscribed to tokens 601-650
+2026-03-07 20:09:28,553 [INFO]   Subscribed to tokens 651-700
+2026-03-07 20:09:28,553 [INFO]   Subscribed to tokens 701-750
+2026-03-07 20:09:28,554 [INFO]   Subscribed to tokens 751-800
+2026-03-07 20:09:28,554 [INFO]   Subscribed to tokens 801-850
+2026-03-07 20:09:28,555 [INFO]   Subscribed to tokens 851-900
+2026-03-07 20:09:28,555 [INFO]   Subscribed to tokens 901-950
+2026-03-07 20:09:28,556 [INFO]   Subscribed to tokens 951-986
+2026-03-07 20:09:28,556 [INFO] Waiting for initial book snapshots...
+2026-03-07 20:09:28,656 [INFO]   Loaded 50/986 books from WS snapshots
+2026-03-07 20:09:30,669 [INFO]   Loaded 65/986 books from WS snapshots
+2026-03-07 20:09:32,690 [INFO]   Loaded 70/986 books from WS snapshots
+2026-03-07 20:09:34,715 [INFO]   Loaded 71/986 books from WS snapshots
+2026-03-07 20:09:36,957 [INFO]   Loaded 74/986 books from WS snapshots
+2026-03-07 20:09:39,020 [INFO]   Loaded 75/986 books from WS snapshots
+2026-03-07 20:09:41,028 [INFO]   Loaded 76/986 books from WS snapshots
+2026-03-07 20:09:43,136 [INFO]   Loaded 76/986 books from WS snapshots
+2026-03-07 20:09:43,655 [INFO] Snapshots ready (76/986 books). Running first arb check...
+2026-03-07 20:09:43,656 [INFO]   BITCOIN march 8: no arb at current prices
+2026-03-07 20:09:43,658 [INFO]   BITCOIN march 9: no arb at current prices
+2026-03-07 20:09:43,659 [INFO]   BITCOIN march 10: no arb at current prices
+2026-03-07 20:09:43,660 [INFO]   BITCOIN march 11: no arb at current prices
+2026-03-07 20:09:43,662 [INFO]   BITCOIN march 12: no arb at current prices
+2026-03-07 20:09:43,663 [INFO]   BITCOIN march 13: no arb at current prices
+2026-03-07 20:09:43,665 [INFO]   ETHEREUM march 7: no arb at current prices
+2026-03-07 20:09:43,666 [INFO]   ETHEREUM march 8: no arb at current prices
+2026-03-07 20:09:43,668 [INFO]   ETHEREUM march 9: no arb at current prices
+2026-03-07 20:09:43,669 [INFO]   ETHEREUM march 10: no arb at current prices
+2026-03-07 20:09:43,671 [INFO]   ETHEREUM march 11: no arb at current prices
+2026-03-07 20:09:43,673 [INFO]   ETHEREUM march 12: no arb at current prices
+2026-03-07 20:09:43,674 [INFO]   ETHEREUM march 13: no arb at current prices
+2026-03-07 20:09:43,675 [INFO]   ETHEREUM march 14: no arb at current prices
+2026-03-07 20:09:43,678 [INFO]   SOLANA march 7: no arb at current prices
+2026-03-07 20:09:43,679 [INFO]   SOLANA march 8: no arb at current prices
+2026-03-07 20:09:43,681 [INFO]   SOLANA march 9: no arb at current prices
+2026-03-07 20:09:43,686 [INFO]   SOLANA march 10: no arb at current prices
+2026-03-07 20:09:43,687 [INFO]   SOLANA march 11: no arb at current prices
+2026-03-07 20:09:43,689 [INFO]   SOLANA march 12: no arb at current prices
+2026-03-07 20:09:43,690 [INFO]   SOLANA march 13: no arb at current prices
+2026-03-07 20:09:43,691 [INFO]   SOLANA march 14: no arb at current prices
+2026-03-07 20:09:43,695 [INFO]   XRP march 7: no arb at current prices
+2026-03-07 20:09:43,698 [INFO]   XRP march 8: no arb at current prices
+2026-03-07 20:09:43,702 [INFO]   XRP march 9: no arb at current prices
+2026-03-07 20:09:43,703 [INFO]   XRP march 10: no arb at current prices
+2026-03-07 20:09:43,704 [INFO]   XRP march 11: no arb at current prices
+2026-03-07 20:09:43,706 [INFO]   XRP march 12: no arb at current prices
+2026-03-07 20:09:43,707 [INFO]   XRP march 13: no arb at current prices
+2026-03-07 20:09:43,708 [INFO]   XRP march 14: no arb at current prices
+2026-03-07 20:09:43,710 [INFO] Streaming orderbook updates... (Ctrl+C to stop)
+2026-03-07 20:28:53,231 [INFO] ============================================================
+2026-03-07 20:28:53,232 [INFO] Polymarket Above/Between Arbitrage Scanner
+2026-03-07 20:28:53,232 [INFO] ============================================================
+2026-03-07 20:28:53,233 [INFO] Discovering events...
+2026-03-07 20:29:02,741 [INFO] Found 30 event pairs:
+2026-03-07 20:29:02,742 [INFO]   BITCOIN march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,743 [INFO]   BITCOIN march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,744 [INFO]   BITCOIN march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,744 [INFO]   BITCOIN march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,745 [INFO]   BITCOIN march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,745 [INFO]   BITCOIN march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,746 [INFO]   ETHEREUM march 7: 9 between + 10 above markets, 55 possible coverings
+2026-03-07 20:29:02,746 [INFO]   ETHEREUM march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,747 [INFO]   ETHEREUM march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,747 [INFO]   ETHEREUM march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,748 [INFO]   ETHEREUM march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,749 [INFO]   ETHEREUM march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,750 [INFO]   ETHEREUM march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,750 [INFO]   ETHEREUM march 14: 9 between + 10 above markets, 55 possible coverings
+2026-03-07 20:29:02,751 [INFO]   SOLANA march 7: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,752 [INFO]   SOLANA march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,753 [INFO]   SOLANA march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,754 [INFO]   SOLANA march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,754 [INFO]   SOLANA march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,756 [INFO]   SOLANA march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,756 [INFO]   SOLANA march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,757 [INFO]   SOLANA march 14: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,759 [INFO]   XRP march 7: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,760 [INFO]   XRP march 8: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,760 [INFO]   XRP march 9: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,761 [INFO]   XRP march 10: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,762 [INFO]   XRP march 11: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,763 [INFO]   XRP march 12: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,763 [INFO]   XRP march 13: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,764 [INFO]   XRP march 14: 9 between + 11 above markets, 66 possible coverings
+2026-03-07 20:29:02,765 [INFO] Tracking 986 tokens
+2026-03-07 20:29:02,765 [INFO] Connecting to WebSocket...
+2026-03-07 20:29:03,004 [INFO]   Subscribed to tokens 1-50
+2026-03-07 20:29:03,005 [INFO]   Subscribed to tokens 51-100
+2026-03-07 20:29:03,005 [INFO]   Subscribed to tokens 101-150
+2026-03-07 20:29:03,006 [INFO]   Subscribed to tokens 151-200
+2026-03-07 20:29:03,006 [INFO]   Subscribed to tokens 201-250
+2026-03-07 20:29:03,007 [INFO]   Subscribed to tokens 251-300
+2026-03-07 20:29:03,007 [INFO]   Subscribed to tokens 301-350
+2026-03-07 20:29:03,008 [INFO]   Subscribed to tokens 351-400
+2026-03-07 20:29:03,009 [INFO]   Subscribed to tokens 401-450
+2026-03-07 20:29:03,009 [INFO]   Subscribed to tokens 451-500
+2026-03-07 20:29:03,010 [INFO]   Subscribed to tokens 501-550
+2026-03-07 20:29:03,010 [INFO]   Subscribed to tokens 551-600
+2026-03-07 20:29:03,011 [INFO]   Subscribed to tokens 601-650
+2026-03-07 20:29:03,011 [INFO]   Subscribed to tokens 651-700
+2026-03-07 20:29:03,012 [INFO]   Subscribed to tokens 701-750
+2026-03-07 20:29:03,012 [INFO]   Subscribed to tokens 751-800
+2026-03-07 20:29:03,013 [INFO]   Subscribed to tokens 801-850
+2026-03-07 20:29:03,013 [INFO]   Subscribed to tokens 851-900
+2026-03-07 20:29:03,014 [INFO]   Subscribed to tokens 901-950
+2026-03-07 20:29:03,014 [INFO]   Subscribed to tokens 951-986
+2026-03-07 20:29:03,014 [INFO] Waiting for initial book snapshots...
+2026-03-07 20:29:03,116 [INFO]   Loaded 50/986 books from WS snapshots
+2026-03-07 20:29:05,140 [INFO]   Loaded 61/986 books from WS snapshots
+2026-03-07 20:29:07,271 [INFO]   Loaded 68/986 books from WS snapshots
+2026-03-07 20:29:09,401 [INFO]   Loaded 72/986 books from WS snapshots
+2026-03-07 20:29:11,907 [INFO]   Loaded 73/986 books from WS snapshots
+2026-03-07 20:29:13,979 [INFO]   Loaded 75/986 books from WS snapshots
+2026-03-07 20:29:15,991 [INFO]   Loaded 77/986 books from WS snapshots
+2026-03-07 20:29:18,117 [INFO]   Loaded 77/986 books from WS snapshots
+2026-03-07 20:29:18,117 [INFO] Snapshots ready (77/986 books). Running first arb check...
+2026-03-07 20:29:18,118 [INFO]   BITCOIN march 8: no arb at current prices
+2026-03-07 20:29:18,119 [INFO]   BITCOIN march 9: no arb at current prices
+2026-03-07 20:29:18,120 [INFO]   BITCOIN march 10: no arb at current prices
+2026-03-07 20:29:18,122 [INFO]   BITCOIN march 11: no arb at current prices
+2026-03-07 20:29:18,123 [INFO]   BITCOIN march 12: no arb at current prices
+2026-03-07 20:29:18,124 [INFO]   BITCOIN march 13: no arb at current prices
+2026-03-07 20:29:18,125 [INFO]   ETHEREUM march 7: no arb at current prices
+2026-03-07 20:29:18,127 [INFO]   ETHEREUM march 8: no arb at current prices
+2026-03-07 20:29:18,128 [INFO]   ETHEREUM march 9: no arb at current prices
+2026-03-07 20:29:18,129 [INFO]   ETHEREUM march 10: no arb at current prices
+2026-03-07 20:29:18,130 [INFO]   ETHEREUM march 11: no arb at current prices
+2026-03-07 20:29:18,132 [INFO]   ETHEREUM march 12: no arb at current prices
+2026-03-07 20:29:18,133 [INFO]   ETHEREUM march 13: no arb at current prices
+2026-03-07 20:29:18,135 [INFO]   ETHEREUM march 14: no arb at current prices
+2026-03-07 20:29:18,136 [INFO]   SOLANA march 7: no arb at current prices
+2026-03-07 20:29:18,140 [INFO]   SOLANA march 8: no arb at current prices
+2026-03-07 20:29:18,141 [INFO]   SOLANA march 9: no arb at current prices
+2026-03-07 20:29:18,144 [INFO]   SOLANA march 10: no arb at current prices
+2026-03-07 20:29:18,145 [INFO]   SOLANA march 11: no arb at current prices
+2026-03-07 20:29:18,147 [INFO]   SOLANA march 12: no arb at current prices
+2026-03-07 20:29:18,148 [INFO]   SOLANA march 13: no arb at current prices
+2026-03-07 20:29:18,149 [INFO]   SOLANA march 14: no arb at current prices
+2026-03-07 20:29:18,149 [INFO]   XRP march 7: no arb at current prices
+2026-03-07 20:29:18,151 [INFO]   XRP march 8: no arb at current prices
+2026-03-07 20:29:18,153 [INFO]   XRP march 9: no arb at current prices
+2026-03-07 20:29:18,158 [INFO]   XRP march 10: no arb at current prices
+2026-03-07 20:29:18,161 [INFO]   XRP march 11: no arb at current prices
+2026-03-07 20:29:18,162 [INFO]   XRP march 12: no arb at current prices
+2026-03-07 20:29:18,163 [INFO]   XRP march 13: no arb at current prices
+2026-03-07 20:29:18,164 [INFO]   XRP march 14: no arb at current prices
+2026-03-07 20:29:18,164 [INFO] Streaming orderbook updates... (Ctrl+C to stop)
