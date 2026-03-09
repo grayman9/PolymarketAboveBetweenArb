@@ -12,6 +12,7 @@ Either tail can be replaced by the Between event's own tail contract.
 """
 
 import asyncio
+import csv
 import json
 import logging
 import re
@@ -37,8 +38,8 @@ WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
 LOG_DIR = Path(__file__).parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
-MIN_EDGE_CENTS = 0.5       # min edge in cents to log (0.5c = $0.005)
-MIN_SIZE_USD = 5.0          # min deployable size to log
+MIN_EDGE_CENTS = 1.0       # min edge in cents to log (0.5c = $0.005)
+MIN_SIZE_USD = 5.0         # min deployable size to log
 SCAN_ASSETS = ["bitcoin", "ethereum", "solana", "xrp"]  # asset names for slug construction
 SCAN_DAYS_AHEAD = 7        # how many days ahead to scan
 REFRESH_INTERVAL = 3600    # re-discover events every hour (seconds)
@@ -87,11 +88,24 @@ class ArbOpportunity:
     timestamp: str
     event_date: str
     asset: str
-    legs: list[dict]          # [{market, side, token, best_ask, ...}]
-    total_cost: float         # sum of asks
+    legs: list[dict]          # [{description, token, side, avg_price, size, leg_cost_usd}]
+    total_cost: float         # sum of avg prices per share
     edge_cents: float         # (1 - total_cost) * 100
-    max_size_usd: float       # limited by thinnest leg
+    max_size_usd: float       # max shares at min edge
+    pnl_usd: float            # profit at max_size_usd
     coverage: str             # human-readable coverage description
+
+
+@dataclass
+class SimPosition:
+    pair_key: str             # "ASSET|date" unique key
+    asset: str
+    event_date: str
+    legs: list[dict]          # [{token, side, description, avg_price, size, leg_cost_usd}]
+    shares: float
+    entry_cost: float         # total USD paid
+    entry_time: str           # ISO timestamp
+    covering_tokens: list[str]  # token_ids for bid-side exit checks
 
 
 # ---------------------------------------------------------------------------
@@ -437,39 +451,96 @@ class OrderbookManager:
 
 
 # ---------------------------------------------------------------------------
+# Fee calculation (crypto taker fees)
+# ---------------------------------------------------------------------------
+CRYPTO_FEE_RATE = 0.25
+CRYPTO_FEE_EXPONENT = 2
+
+
+def taker_fee_mult(price: float) -> float:
+    """Return the fee multiplier at a given price.
+
+    fee_usdc = shares * price * CRYPTO_FEE_RATE * (price * (1 - price)) ^ CRYPTO_FEE_EXPONENT
+
+    On BUY: fee collected in shares -> net shares = ordered * (1 - fee_mult)
+    On SELL: fee collected in USDC  -> net proceeds = gross * (1 - fee_mult)
+    """
+    return CRYPTO_FEE_RATE * (price * (1.0 - price)) ** CRYPTO_FEE_EXPONENT
+
+
+# ---------------------------------------------------------------------------
 # Arbitrage detection
 # ---------------------------------------------------------------------------
 def compute_leg_cost(ob_manager: OrderbookManager, token_id: str,
                      target_size: Optional[float] = None) -> tuple[float, float]:
     """
-    Compute the cost to buy `target_size` shares at ask.
-    Returns (avg_price_per_share, max_available_size).
-    If target_size is None, returns (best_ask_price, best_ask_size).
+    Compute the cost to buy `target_size` NET shares at ask, including taker fees.
+    Fees are collected in shares: from each level we order X shares but receive
+    X * (1 - fee_mult) net shares.  So effective cost per net share is higher.
+    Returns (avg_cost_per_net_share, net_shares_filled).
+    If target_size is None, returns (best_ask_price_with_fee, best_ask_net_size).
     """
-    asks = ob_manager.get_cumulative_asks(token_id)
-    if not asks:
+    book = ob_manager.books.get(token_id)
+    if not book or not book.asks:
         return (float('inf'), 0.0)
 
     if target_size is None:
-        return (asks[0].price, asks[0].size)
+        best = book.asks[0]
+        fm = taker_fee_mult(best.price)
+        net_size = best.size * (1.0 - fm)
+        eff_price = best.price / (1.0 - fm) if fm < 1.0 else float('inf')
+        return (eff_price, net_size)
 
     # Walk the book
     total_cost = 0.0
-    filled = 0.0
-    book = ob_manager.books.get(token_id)
-    if not book:
-        return (float('inf'), 0.0)
+    net_filled = 0.0
 
     for lvl in book.asks:
+        fm = taker_fee_mult(lvl.price)
+        net_per_share = 1.0 - fm  # net shares received per share ordered
+        if net_per_share <= 0:
+            continue
+        # How many net shares do we still need?
+        need = target_size - net_filled
+        # Max net shares available from this level
+        avail_net = lvl.size * net_per_share
+        take_net = min(avail_net, need)
+        # How many raw shares to order for take_net net shares
+        raw_shares = take_net / net_per_share
+        total_cost += raw_shares * lvl.price
+        net_filled += take_net
+        if net_filled >= target_size - 1e-9:
+            break
+
+    if net_filled < 1e-9:
+        return (float('inf'), 0.0)
+    return (total_cost / net_filled, net_filled)
+
+
+def compute_leg_sell(ob_manager: OrderbookManager, token_id: str,
+                     target_size: float) -> tuple[float, float]:
+    """
+    Compute net proceeds from selling `target_size` shares at bid, after taker fees.
+    Fees are collected in USDC: net = gross * (1 - fee_mult).
+    Returns (avg_net_price_per_share, filled_size).
+    """
+    book = ob_manager.books.get(token_id)
+    if not book or not book.bids:
+        return (0.0, 0.0)
+
+    total_net_proceeds = 0.0
+    filled = 0.0
+    for lvl in book.bids:  # sorted descending by price
         can_fill = min(lvl.size, target_size - filled)
-        total_cost += can_fill * lvl.price
+        fm = taker_fee_mult(lvl.price)
+        total_net_proceeds += can_fill * lvl.price * (1.0 - fm)
         filled += can_fill
         if filled >= target_size - 1e-9:
             break
 
     if filled < 1e-9:
-        return (float('inf'), 0.0)
-    return (total_cost / filled, filled)
+        return (0.0, 0.0)
+    return (total_net_proceeds / filled, filled)
 
 
 def enumerate_coverings(pair: EventPair) -> list[list[tuple[str, str, str]]]:
@@ -615,22 +686,14 @@ def check_arb(pair: EventPair, ob_manager: OrderbookManager) -> list[ArbOpportun
         total_cost = 0.0
         min_size = float('inf')
         valid = True
-        leg_details = []
 
         for token_id, side, desc in covering:
-            best = ob_manager.get_best_ask(token_id)
-            if best is None or best.price <= 0:
+            eff_price, net_size = compute_leg_cost(ob_manager, token_id)
+            if eff_price == float('inf') or eff_price <= 0:
                 valid = False
                 break
-            total_cost += best.price
-            min_size = min(min_size, best.size)
-            leg_details.append({
-                "description": desc,
-                "token": token_id[:20] + "...",
-                "side": side,
-                "best_ask": best.price,
-                "ask_size": best.size,
-            })
+            total_cost += eff_price
+            min_size = min(min_size, net_size)
 
         if not valid or min_size < 1e-9:
             continue
@@ -640,8 +703,10 @@ def check_arb(pair: EventPair, ob_manager: OrderbookManager) -> list[ArbOpportun
 
         if edge_cents >= MIN_EDGE_CENTS and min_size >= MIN_SIZE_USD:
             # Second pass: compute max deployable size walking the book
+            min_edge = MIN_EDGE_CENTS / 100  # e.g. 0.005
+
             def _test_size(sz):
-                """Test if `sz` shares are feasible and profitable.
+                """Test if `sz` shares are feasible with at least min_edge.
                 Returns (profitable: bool, total_cost: float)."""
                 leg_costs = []
                 for token_id, side, desc in covering:
@@ -649,7 +714,8 @@ def check_arb(pair: EventPair, ob_manager: OrderbookManager) -> list[ArbOpportun
                     if filled < sz - 0.01:
                         return False, float('inf')
                     leg_costs.append(avg_price)
-                return sum(leg_costs) < 1.0, sum(leg_costs)
+                tc = sum(leg_costs)
+                return tc <= 1.0 - min_edge, tc
 
             test_sizes = [10, 50, 100, 250, 500, 1000, 2500, 5000]
             best_deploy = 0.0
@@ -679,8 +745,26 @@ def check_arb(pair: EventPair, ob_manager: OrderbookManager) -> list[ArbOpportun
                         hi = mid
                 best_deploy = int(best_deploy)  # round down to whole shares
 
-            if best_deploy < MIN_SIZE_USD:
+            if best_deploy < MIN_SIZE_USD or best_deploy_cost >= 1.0:
                 continue
+
+            # Compute per-leg details at best_deploy size
+            deploy_legs = []
+            for token_id, side, desc in covering:
+                avg_price, filled = compute_leg_cost(ob_manager, token_id, best_deploy)
+                leg_cost_usd = avg_price * best_deploy
+                deploy_legs.append({
+                    "description": desc,
+                    "token": token_id,
+                    "side": side,
+                    "avg_price": round(avg_price, 6),
+                    "size": best_deploy,
+                    "leg_cost_usd": round(leg_cost_usd, 2),
+                })
+
+            total_cost_usd = sum(lg["leg_cost_usd"] for lg in deploy_legs)
+            payout_usd = best_deploy  # covering guarantees exactly 1 share pays out
+            pnl_usd = payout_usd - total_cost_usd
 
             coverage_desc = " + ".join(d for _, _, d in covering)
             n_above = sum(1 for _, _, d in covering if "[above]" in d)
@@ -690,10 +774,11 @@ def check_arb(pair: EventPair, ob_manager: OrderbookManager) -> list[ArbOpportun
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 event_date=pair.date_str,
                 asset=pair.asset,
-                legs=leg_details,
+                legs=deploy_legs,
                 total_cost=best_deploy_cost,
                 edge_cents=(1.0 - best_deploy_cost) * 100,
                 max_size_usd=best_deploy,
+                pnl_usd=round(pnl_usd, 2),
                 coverage=f"{n_above} above + {n_between} between legs: {coverage_desc}",
             )
             opportunities.append(opp)
@@ -704,6 +789,143 @@ def check_arb(pair: EventPair, ob_manager: OrderbookManager) -> list[ArbOpportun
 
 
 # ---------------------------------------------------------------------------
+# Trade simulator
+# ---------------------------------------------------------------------------
+class Simulator:
+    """Paper-trades arb opportunities with realistic constraints.
+
+    Rules:
+    - One position per event pair (asset+date)
+    - Picks the highest-PnL covering when multiple exist
+    - Sells all legs when sum of bid prices >= $1/share (early exit)
+    - Tracks realized P&L and capital deployed
+    """
+
+    def __init__(self):
+        self.positions: dict[str, SimPosition] = {}  # pair_key -> position
+        self.closed_trades: list[dict] = []
+        self.total_pnl = 0.0
+        self.csv_path = LOG_DIR / "sim_trades.csv"
+        self._write_header()
+
+    def _write_header(self):
+        if not self.csv_path.exists():
+            with open(self.csv_path, "w", encoding="utf-8", newline="") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    "entry_time", "exit_time", "asset", "date", "action",
+                    "shares", "entry_cost", "exit_proceeds", "pnl",
+                    "n_legs", "leg_details",
+                ])
+
+    def check_entries(self, pairs: list, ob_manager: OrderbookManager):
+        """For each asset without an open position, find best arb across all dates."""
+        # Skip assets that already have an open position
+        active_assets = {pos.asset for pos in self.positions.values()}
+
+        # Collect best opportunity per asset across all dates
+        best_per_asset: dict[str, tuple[ArbOpportunity, str]] = {}
+        for pair in pairs:
+            if pair.asset in active_assets:
+                continue
+
+            opps = check_arb(pair, ob_manager)
+            for opp in opps:
+                prev = best_per_asset.get(opp.asset)
+                if prev is None or opp.pnl_usd > prev[0].pnl_usd:
+                    pair_key = f"{opp.asset}|{opp.event_date}"
+                    best_per_asset[opp.asset] = (opp, pair_key)
+
+        for _, (opp, pair_key) in best_per_asset.items():
+            self._enter(opp, pair_key)
+
+    def _enter(self, opp: ArbOpportunity, pair_key: str):
+        tokens = [lg["token"] for lg in opp.legs]
+        pos = SimPosition(
+            pair_key=pair_key,
+            asset=opp.asset,
+            event_date=opp.event_date,
+            legs=opp.legs,
+            shares=opp.max_size_usd,
+            entry_cost=sum(lg["leg_cost_usd"] for lg in opp.legs),
+            entry_time=opp.timestamp,
+            covering_tokens=tokens,
+        )
+        self.positions[pair_key] = pos
+        log.info(
+            f"SIM ENTRY | {opp.asset} {opp.event_date} | "
+            f"{opp.max_size_usd:.0f} shares | cost=${pos.entry_cost:.2f} | "
+            f"expected_pnl=${opp.pnl_usd:.2f} | legs={len(opp.legs)}"
+        )
+        for lg in opp.legs:
+            log.info(f"  BUY {lg['description']}: {lg['size']:.0f} @ {lg['avg_price']:.4f} = ${lg['leg_cost_usd']:.2f}")
+
+    def check_exits(self, ob_manager: OrderbookManager):
+        """Check if any open position can be sold at profit (sum of bids >= 1)."""
+        to_close = []
+        for pair_key, pos in self.positions.items():
+            total_bid_price = 0.0
+            total_proceeds = 0.0
+            can_sell = True
+
+            for lg in pos.legs:
+                avg_bid, filled = compute_leg_sell(ob_manager, lg["token"], pos.shares)
+                if filled < pos.shares - 0.01:
+                    can_sell = False
+                    break
+                total_bid_price += avg_bid
+                total_proceeds += avg_bid * pos.shares
+
+            if can_sell and total_bid_price >= 1.0:
+                to_close.append((pair_key, total_proceeds))
+
+        for pair_key, proceeds in to_close:
+            self._exit(pair_key, proceeds, "SELL")
+
+    def _exit(self, pair_key: str, proceeds: float, action: str):
+        pos = self.positions.pop(pair_key)
+        pnl = proceeds - pos.entry_cost
+        self.total_pnl += pnl
+        now = datetime.now(timezone.utc).isoformat()
+
+        log.info(
+            f"SIM EXIT  | {pos.asset} {pos.event_date} | {action} | "
+            f"{pos.shares:.0f} shares | proceeds=${proceeds:.2f} | "
+            f"pnl=${pnl:.2f} | total_pnl=${self.total_pnl:.2f}"
+        )
+
+        leg_details = " | ".join(
+            f"{lg['description']}: {lg['size']:.0f} @ {lg['avg_price']:.4f}"
+            for lg in pos.legs
+        )
+        trade = {
+            "entry_time": pos.entry_time, "exit_time": now,
+            "asset": pos.asset, "date": pos.event_date, "action": action,
+            "shares": pos.shares, "entry_cost": pos.entry_cost,
+            "exit_proceeds": proceeds, "pnl": pnl,
+        }
+        self.closed_trades.append(trade)
+
+        with open(self.csv_path, "a", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                pos.entry_time, now, pos.asset, pos.event_date, action,
+                f"{pos.shares:.0f}", f"{pos.entry_cost:.2f}",
+                f"{proceeds:.2f}", f"{pnl:.2f}",
+                len(pos.legs), leg_details,
+            ])
+
+    def summary(self):
+        n_open = len(self.positions)
+        n_closed = len(self.closed_trades)
+        capital_deployed = sum(p.entry_cost for p in self.positions.values())
+        log.info(
+            f"SIM SUMMARY | open={n_open} (${capital_deployed:.2f} deployed) | "
+            f"closed={n_closed} | realized_pnl=${self.total_pnl:.2f}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Opportunity logging
 # ---------------------------------------------------------------------------
 def log_opportunity(opp: ArbOpportunity):
@@ -711,23 +933,32 @@ def log_opportunity(opp: ArbOpportunity):
     log.info(
         f"ARB FOUND | {opp.asset} {opp.event_date} | "
         f"edge={opp.edge_cents:.1f}c | cost={opp.total_cost:.4f} | "
-        f"max_size=${opp.max_size_usd:.0f} | legs={len(opp.legs)}"
+        f"size={opp.max_size_usd:.0f} shares | PnL=${opp.pnl_usd:.2f} | legs={len(opp.legs)}"
     )
     for leg in opp.legs:
-        log.info(f"  {leg['description']}: ask={leg['best_ask']:.4f} size={leg['ask_size']:.1f}")
+        log.info(f"  {leg['description']}: avg={leg['avg_price']:.4f} x {leg['size']:.0f} = ${leg['leg_cost_usd']:.2f}")
 
     # Append to CSV
     csv_path = LOG_DIR / "opportunities.csv"
     write_header = not csv_path.exists()
-    with open(csv_path, "a", encoding="utf-8") as f:
+    leg_details = " | ".join(
+        f"{lg['description']}: {lg['size']:.0f} @ {lg['avg_price']:.4f} = ${lg['leg_cost_usd']:.2f}"
+        for lg in opp.legs
+    )
+    total_cost_usd = sum(lg["leg_cost_usd"] for lg in opp.legs)
+    with open(csv_path, "a", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
         if write_header:
-            f.write("timestamp,asset,date,edge_cents,total_cost,max_size_usd,n_legs,coverage\n")
-        f.write(
-            f"{opp.timestamp},{opp.asset},{opp.event_date},"
-            f"{opp.edge_cents:.2f},{opp.total_cost:.4f},"
-            f"{opp.max_size_usd:.0f},{len(opp.legs)},"
-            f"\"{opp.coverage}\"\n"
-        )
+            writer.writerow([
+                "timestamp", "asset", "date", "edge_cents", "cost_per_share",
+                "shares", "total_cost_usd", "pnl_usd", "n_legs", "leg_details", "coverage",
+            ])
+        writer.writerow([
+            opp.timestamp, opp.asset, opp.event_date,
+            f"{opp.edge_cents:.2f}", f"{opp.total_cost:.4f}",
+            f"{opp.max_size_usd:.0f}", f"{total_cost_usd:.2f}", f"{opp.pnl_usd:.2f}",
+            len(opp.legs), leg_details, opp.coverage,
+        ])
 
     # Detailed JSON log
     json_path = LOG_DIR / "opportunities_detail.jsonl"
@@ -739,6 +970,7 @@ def log_opportunity(opp: ArbOpportunity):
             "edge_cents": round(opp.edge_cents, 2),
             "total_cost": round(opp.total_cost, 4),
             "max_size_usd": round(opp.max_size_usd, 2),
+            "pnl_usd": opp.pnl_usd,
             "legs": opp.legs,
             "coverage": opp.coverage,
         }
@@ -775,7 +1007,9 @@ async def run_scanner():
     log.info(f"Tracking {len(all_tokens)} tokens")
 
     ob_manager = OrderbookManager()
+    sim = Simulator()
     reconnect_delay = 1
+    last_sim_summary = time.time()
 
     while True:
         try:
@@ -800,6 +1034,10 @@ async def run_scanner():
                 last_refresh = time.time()
                 last_data = time.time()
                 snapshots_loaded = False
+                # Track last logged arbs to avoid spamming: key -> (edge_cents, max_size)
+                last_logged_arbs: dict[str, tuple[float, float]] = {}
+                EDGE_CHANGE_THRESHOLD = 0.1  # re-log if edge changes by 0.1c
+                SIZE_CHANGE_RATIO = 0.2      # re-log if size changes by 20%
                 snapshot_start = time.time()
                 last_snapshot_log = 0  # track when we last logged snapshot progress
 
@@ -878,6 +1116,12 @@ async def run_scanner():
                         if (loaded >= len(token_list) * 0.8 or
                                 (now - snapshot_start > 15 and loaded > 0)):
                             snapshots_loaded = True
+                            # Backfill missing books via REST
+                            missing = [t for t in token_list if t not in ob_manager.books or not ob_manager.books[t].asks]
+                            if missing:
+                                log.info(f"Backfilling {len(missing)} missing orderbooks via REST...")
+                                ob_manager.fetch_initial(missing)
+                                loaded = len(ob_manager.books)
                             log.info(f"Snapshots ready ({loaded}/{len(token_list)} books). Running first arb check...")
                             for p in pairs:
                                 opps = check_arb(p, ob_manager)
@@ -886,16 +1130,46 @@ async def run_scanner():
                                         log_opportunity(opp)
                                 else:
                                     log.info(f"  {p.asset} {p.date_str}: no arb at current prices")
+                            last_data = time.time()  # reset after backfill so watchdog doesn't fire
                             log.info("Streaming orderbook updates... (Ctrl+C to stop)")
                         continue
 
                     # Throttle arb checks to every 50ms
                     if time.time() - last_check >= 0.05:
                         last_check = time.time()
+                        active_keys = set()
                         for p in pairs:
                             opps = check_arb(p, ob_manager)
                             for opp in opps:
-                                log_opportunity(opp)
+                                key = f"{opp.asset}|{opp.event_date}|{opp.coverage}"
+                                active_keys.add(key)
+                                prev = last_logged_arbs.get(key)
+                                if prev is None:
+                                    log_opportunity(opp)
+                                    last_logged_arbs[key] = (opp.edge_cents, opp.max_size_usd)
+                                else:
+                                    prev_edge, prev_size = prev
+                                    edge_changed = abs(opp.edge_cents - prev_edge) >= EDGE_CHANGE_THRESHOLD
+                                    size_changed = prev_size > 0 and abs(opp.max_size_usd - prev_size) / prev_size >= SIZE_CHANGE_RATIO
+                                    if edge_changed or size_changed:
+                                        log_opportunity(opp)
+                                        last_logged_arbs[key] = (opp.edge_cents, opp.max_size_usd)
+                        # Log when arbs disappear
+                        gone = set(last_logged_arbs) - active_keys
+                        for key in gone:
+                            asset, date, _ = key.split("|", 2)
+                            log.info(f"ARB GONE  | {asset} {date}")
+                            del last_logged_arbs[key]
+
+                        # Simulator: check exits first, then entries
+                        sim.check_exits(ob_manager)
+                        sim.check_entries(pairs, ob_manager)
+
+                        # Periodic sim summary (every 5 min)
+                        now_t = time.time()
+                        if now_t - last_sim_summary >= 300:
+                            last_sim_summary = now_t
+                            sim.summary()
 
                     # Hourly refresh: discover new events, sub/unsub tokens
                     if time.time() - last_refresh >= REFRESH_INTERVAL:
@@ -988,22 +1262,22 @@ def run_snapshot():
             total_cost = 0.0
             valid = True
             for token_id, side, desc in covering:
-                best = ob_manager.get_best_ask(token_id)
-                if best is None:
+                eff_price, net_size = compute_leg_cost(ob_manager, token_id)
+                if eff_price == float('inf'):
                     valid = False
                     break
-                total_cost += best.price
+                total_cost += eff_price
             if valid and total_cost < best_cost:
                 best_cost = total_cost
                 best_covering = covering
 
         if best_covering:
             edge = (1.0 - best_cost) * 100
-            log.info(f"  Best covering cost: {best_cost:.4f} (edge: {edge:.1f}c)")
+            log.info(f"  Best covering cost: {best_cost:.4f} (edge: {edge:.1f}c, incl fees)")
             for token_id, side, desc in best_covering:
-                best = ob_manager.get_best_ask(token_id)
-                price_str = f"{best.price:.4f}" if best else "N/A"
-                size_str = f"{best.size:.1f}" if best else "N/A"
+                eff_price, net_size = compute_leg_cost(ob_manager, token_id)
+                price_str = f"{eff_price:.4f}" if eff_price < float('inf') else "N/A"
+                size_str = f"{net_size:.1f}"
                 log.info(f"    {desc}: ask={price_str} size={size_str}")
 
         opps = check_arb(p, ob_manager)
