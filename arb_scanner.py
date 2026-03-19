@@ -543,6 +543,41 @@ def compute_leg_sell(ob_manager: OrderbookManager, token_id: str,
     return (total_net_proceeds / filled, filled)
 
 
+def _between_covers_range(between_markets: list[Market], range_low: float, range_high: float) -> bool:
+    """Check that between markets continuously cover [range_low, range_high] with no gaps."""
+    if range_low >= range_high:
+        return False
+    # Filter to markets within the range
+    relevant = sorted(
+        [m for m in between_markets if m.lower is not None and m.upper is not None
+         and m.lower >= range_low - 0.01 and m.upper <= range_high + 0.01],
+        key=lambda m: m.lower,
+    )
+    if not relevant:
+        return False
+    # First market must start at range_low
+    if abs(relevant[0].lower - range_low) > 0.01:
+        return False
+    # Walk the chain: each market's upper must equal the next market's lower
+    cursor = relevant[0].upper
+    for m in relevant[1:]:
+        if abs(m.lower - cursor) > 0.01:
+            return False
+        cursor = m.upper
+    # Last market must end at range_high
+    return abs(cursor - range_high) <= 0.01
+
+
+def _fmt_price(val: float) -> str:
+    """Format a dollar price with appropriate precision.
+
+    Values >= 100 use no decimals ($68,000), smaller values keep 2 ($1.10).
+    """
+    if val >= 100:
+        return f"${val:,.0f}"
+    return f"${val:,.2f}"
+
+
 def enumerate_coverings(pair: EventPair) -> list[list[tuple[str, str, str]]]:
     """
     Enumerate all valid coverings of the outcome space.
@@ -590,17 +625,19 @@ def enumerate_coverings(pair: EventPair) -> list[list[tuple[str, str, str]]]:
     aligned = pair.thresholds  # thresholds present in both events
 
     # Config 1: All between contracts (baseline)
-    baseline = []
-    if pair.below_market:
-        baseline.append((pair.below_market.yes_token, "YES",
-                         f"Below ${pair.below_market.threshold:,.0f} [between]"))
-    for m in btwn:
-        baseline.append((m.yes_token, "YES",
-                         f"Between ${m.lower:,.0f}-${m.upper:,.0f} [between]"))
-    if pair.above_tail_market:
-        baseline.append((pair.above_tail_market.yes_token, "YES",
-                         f"Above ${pair.above_tail_market.threshold:,.0f} [between]"))
-    coverings.append(baseline)
+    # Validate that between markets cover the full range from lowest to highest
+    if _between_covers_range(btwn, lowest, highest):
+        baseline = []
+        if pair.below_market:
+            baseline.append((pair.below_market.yes_token, "YES",
+                             f"Below {_fmt_price(pair.below_market.threshold)} [between]"))
+        for m in btwn:
+            baseline.append((m.yes_token, "YES",
+                             f"Between {_fmt_price(m.lower)}-{_fmt_price(m.upper)} [between]"))
+        if pair.above_tail_market:
+            baseline.append((pair.above_tail_market.yes_token, "YES",
+                             f"Above {_fmt_price(pair.above_tail_market.threshold)} [between]"))
+        coverings.append(baseline)
 
     # Config 2: Above_T YES for the top + between for the rest
     for t_high in aligned:
@@ -608,20 +645,23 @@ def enumerate_coverings(pair: EventPair) -> list[list[tuple[str, str, str]]]:
             continue
         if t_high not in above_map:
             continue
+        # Between contracts must cover lowest..t_high
+        if not _between_covers_range(btwn, lowest, t_high):
+            continue
         legs = []
         # Bottom: between tail
         if pair.below_market:
             legs.append((pair.below_market.yes_token, "YES",
-                         f"Below ${pair.below_market.threshold:,.0f} [between]"))
+                         f"Below {_fmt_price(pair.below_market.threshold)} [between]"))
         # Middle: between contracts up to t_high
         for m in btwn:
             if m.lower is not None and m.lower < t_high:
                 legs.append((m.yes_token, "YES",
-                             f"Between ${m.lower:,.0f}-${m.upper:,.0f} [between]"))
+                             f"Between {_fmt_price(m.lower)}-{_fmt_price(m.upper)} [between]"))
         # Top: above YES
         am = above_map[t_high]
         legs.append((am.yes_token, "YES",
-                     f"Above ${t_high:,.0f} YES [above]"))
+                     f"Above {_fmt_price(t_high)} YES [above]"))
         coverings.append(legs)
 
     # Config 3: Above_T NO for the bottom + between for the rest
@@ -630,20 +670,23 @@ def enumerate_coverings(pair: EventPair) -> list[list[tuple[str, str, str]]]:
             continue
         if t_low not in above_map:
             continue
+        # Between contracts must cover t_low..highest
+        if not _between_covers_range(btwn, t_low, highest):
+            continue
         legs = []
         # Bottom: above NO
         am = above_map[t_low]
         legs.append((am.no_token, "NO",
-                     f"Above ${t_low:,.0f} NO [above]"))
+                     f"Above {_fmt_price(t_low)} NO [above]"))
         # Middle: between contracts from t_low up
         for m in btwn:
             if m.lower is not None and m.lower >= t_low:
                 legs.append((m.yes_token, "YES",
-                             f"Between ${m.lower:,.0f}-${m.upper:,.0f} [between]"))
+                             f"Between {_fmt_price(m.lower)}-{_fmt_price(m.upper)} [between]"))
         # Top: between tail
         if pair.above_tail_market:
             legs.append((pair.above_tail_market.yes_token, "YES",
-                         f"Above ${pair.above_tail_market.threshold:,.0f} [between]"))
+                         f"Above {_fmt_price(pair.above_tail_market.threshold)} [between]"))
         coverings.append(legs)
 
     # Config 4: Above_T1 NO + between middle + Above_T2 YES
@@ -654,20 +697,23 @@ def enumerate_coverings(pair: EventPair) -> list[list[tuple[str, str, str]]]:
             continue
         if t_low < lowest or t_high > highest:
             continue
+        # Between contracts must cover t_low..t_high
+        if not _between_covers_range(btwn, t_low, t_high):
+            continue
         legs = []
         # Bottom: above NO
         am_low = above_map[t_low]
         legs.append((am_low.no_token, "NO",
-                     f"Above ${t_low:,.0f} NO [above]"))
+                     f"Above {_fmt_price(t_low)} NO [above]"))
         # Middle: between contracts
         for m in btwn:
             if m.lower is not None and m.lower >= t_low and m.upper is not None and m.upper <= t_high:
                 legs.append((m.yes_token, "YES",
-                             f"Between ${m.lower:,.0f}-${m.upper:,.0f} [between]"))
+                             f"Between {_fmt_price(m.lower)}-{_fmt_price(m.upper)} [between]"))
         # Top: above YES
         am_high = above_map[t_high]
         legs.append((am_high.yes_token, "YES",
-                     f"Above ${t_high:,.0f} YES [above]"))
+                     f"Above {_fmt_price(t_high)} YES [above]"))
         coverings.append(legs)
 
     return coverings
