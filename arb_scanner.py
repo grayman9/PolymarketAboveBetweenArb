@@ -860,10 +860,41 @@ class Simulator:
         for lg in opp.legs:
             log.info(f"  BUY {lg['description']}: {lg['size']:.0f} @ {lg['avg_price']:.4f} = ${lg['leg_cost_usd']:.2f}")
 
+        # Write BUY to CSV
+        leg_details = " | ".join(
+            f"{lg['description']}: {lg['size']:.0f} @ {lg['avg_price']:.4f} = ${lg['leg_cost_usd']:.2f}"
+            for lg in opp.legs
+        )
+        with open(self.csv_path, "a", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                opp.timestamp, "", opp.asset, opp.event_date, "BUY",
+                f"{opp.max_size_usd:.0f}", f"{pos.entry_cost:.2f}",
+                "", "", len(opp.legs), leg_details,
+            ])
+
     def check_exits(self, ob_manager: OrderbookManager):
-        """Check if any open position can be sold at profit (sum of bids >= 1)."""
+        """Check exits: sell when bids >= $1, or settle at expiry for $1/share."""
         to_close = []
+        today = datetime.now(timezone.utc).date()
+        months = ["january", "february", "march", "april", "may", "june",
+                  "july", "august", "september", "october", "november", "december"]
+
         for pair_key, pos in self.positions.items():
+            # Check expiry: event_date like "march 9" -> if today > that date, settle
+            try:
+                parts = pos.event_date.lower().split()
+                month_idx = months.index(parts[0]) + 1
+                day = int(parts[1])
+                event_date = today.replace(month=month_idx, day=day)
+                if today > event_date:
+                    # Covering guarantees $1/share payout at expiry
+                    to_close.append((pair_key, pos.shares, "SETTLE"))
+                    continue
+            except (ValueError, IndexError):
+                pass
+
+            # Check early exit: sell all legs when sum of bids >= $1/share
             total_bid_price = 0.0
             total_proceeds = 0.0
             can_sell = True
@@ -877,10 +908,10 @@ class Simulator:
                 total_proceeds += avg_bid * pos.shares
 
             if can_sell and total_bid_price >= 1.0:
-                to_close.append((pair_key, total_proceeds))
+                to_close.append((pair_key, total_proceeds, "SELL"))
 
-        for pair_key, proceeds in to_close:
-            self._exit(pair_key, proceeds, "SELL")
+        for pair_key, proceeds, action in to_close:
+            self._exit(pair_key, proceeds, action)
 
     def _exit(self, pair_key: str, proceeds: float, action: str):
         pos = self.positions.pop(pair_key)
@@ -977,6 +1008,36 @@ def log_opportunity(opp: ArbOpportunity):
         f.write(json.dumps(record) + "\n")
 
 
+def log_opportunity_duration(asset: str, event_date: str, first_seen: str,
+                             gone_at: str, duration_s: float,
+                             initial_edge_cents: float, initial_size: float,
+                             peak_edge_cents: float, peak_size: float,
+                             last_edge_cents: float, last_size: float,
+                             coverage: str):
+    """Log how long an arbitrage opportunity persisted with lifecycle stats."""
+    csv_path = LOG_DIR / "opportunity_durations.csv"
+    write_header = not csv_path.exists()
+    with open(csv_path, "a", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        if write_header:
+            writer.writerow([
+                "first_seen", "gone_at", "asset", "date",
+                "duration_seconds",
+                "initial_edge_cents", "initial_size_shares",
+                "peak_edge_cents", "peak_size_shares",
+                "last_edge_cents", "last_size_shares",
+                "coverage",
+            ])
+        writer.writerow([
+            first_seen, gone_at, asset, event_date,
+            f"{duration_s:.1f}",
+            f"{initial_edge_cents:.2f}", f"{initial_size:.0f}",
+            f"{peak_edge_cents:.2f}", f"{peak_size:.0f}",
+            f"{last_edge_cents:.2f}", f"{last_size:.0f}",
+            coverage,
+        ])
+
+
 # ---------------------------------------------------------------------------
 # WebSocket streaming
 # ---------------------------------------------------------------------------
@@ -1036,6 +1097,8 @@ async def run_scanner():
                 snapshots_loaded = False
                 # Track last logged arbs to avoid spamming: key -> (edge_cents, max_size)
                 last_logged_arbs: dict[str, tuple[float, float]] = {}
+                # Track arb lifecycle: key -> {first_seen_time, first_seen_iso, initial_edge, initial_size, peak_edge, peak_size}
+                arb_lifecycle: dict[str, dict] = {}
                 EDGE_CHANGE_THRESHOLD = 0.1  # re-log if edge changes by 0.1c
                 SIZE_CHANGE_RATIO = 0.2      # re-log if size changes by 20%
                 snapshot_start = time.time()
@@ -1147,6 +1210,15 @@ async def run_scanner():
                                 if prev is None:
                                     log_opportunity(opp)
                                     last_logged_arbs[key] = (opp.edge_cents, opp.max_size_usd)
+                                    if key not in arb_lifecycle:
+                                        arb_lifecycle[key] = {
+                                            "first_seen_time": time.time(),
+                                            "first_seen_iso": opp.timestamp,
+                                            "initial_edge": opp.edge_cents,
+                                            "initial_size": opp.max_size_usd,
+                                            "peak_edge": opp.edge_cents,
+                                            "peak_size": opp.max_size_usd,
+                                        }
                                 else:
                                     prev_edge, prev_size = prev
                                     edge_changed = abs(opp.edge_cents - prev_edge) >= EDGE_CHANGE_THRESHOLD
@@ -1154,11 +1226,42 @@ async def run_scanner():
                                     if edge_changed or size_changed:
                                         log_opportunity(opp)
                                         last_logged_arbs[key] = (opp.edge_cents, opp.max_size_usd)
-                        # Log when arbs disappear
+                                    # Update peaks
+                                    lc = arb_lifecycle.get(key)
+                                    if lc:
+                                        if opp.edge_cents > lc["peak_edge"]:
+                                            lc["peak_edge"] = opp.edge_cents
+                                        if opp.max_size_usd > lc["peak_size"]:
+                                            lc["peak_size"] = opp.max_size_usd
+                        # Log when arbs disappear, including how long they lasted
                         gone = set(last_logged_arbs) - active_keys
                         for key in gone:
-                            asset, date, _ = key.split("|", 2)
-                            log.info(f"ARB GONE  | {asset} {date}")
+                            asset, date, coverage = key.split("|", 2)
+                            lc = arb_lifecycle.pop(key, None)
+                            duration_s = time.time() - lc["first_seen_time"] if lc else 0.0
+                            prev_edge, prev_size = last_logged_arbs[key]
+                            log.info(
+                                f"ARB GONE  | {asset} {date} | "
+                                f"lasted {duration_s:.1f}s | "
+                                f"peak_edge={lc['peak_edge']:.1f}c | peak_size={lc['peak_size']:.0f} | "
+                                f"last_edge={prev_edge:.1f}c | last_size={prev_size:.0f}"
+                                if lc else
+                                f"ARB GONE  | {asset} {date} | "
+                                f"last_edge={prev_edge:.1f}c | last_size={prev_size:.0f}"
+                            )
+                            log_opportunity_duration(
+                                asset=asset, event_date=date,
+                                first_seen=lc["first_seen_iso"] if lc else "",
+                                gone_at=datetime.now(timezone.utc).isoformat(),
+                                duration_s=duration_s,
+                                initial_edge_cents=lc["initial_edge"] if lc else 0.0,
+                                initial_size=lc["initial_size"] if lc else 0.0,
+                                peak_edge_cents=lc["peak_edge"] if lc else 0.0,
+                                peak_size=lc["peak_size"] if lc else 0.0,
+                                last_edge_cents=prev_edge,
+                                last_size=prev_size,
+                                coverage=coverage,
+                            )
                             del last_logged_arbs[key]
 
                         # Simulator: check exits first, then entries
