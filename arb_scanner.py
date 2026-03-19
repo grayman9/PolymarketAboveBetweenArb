@@ -89,8 +89,9 @@ class ArbOpportunity:
     event_date: str
     asset: str
     legs: list[dict]          # [{description, token, side, avg_price, size, leg_cost_usd}]
-    total_cost: float         # sum of avg prices per share
-    edge_cents: float         # (1 - total_cost) * 100
+    total_cost: float         # sum of avg prices per share (at max_size)
+    edge_cents: float         # (1 - total_cost) * 100 at max_size
+    best_edge_cents: float    # edge at top-of-book (best case, 1 share)
     max_size_usd: float       # max shares at min edge
     pnl_usd: float            # profit at max_size_usd
     coverage: str             # human-readable coverage description
@@ -744,10 +745,10 @@ def check_arb(pair: EventPair, ob_manager: OrderbookManager) -> list[ArbOpportun
         if not valid or min_size < 1e-9:
             continue
 
-        edge_cents = (1.0 - total_cost) * 100
+        best_edge_cents = (1.0 - total_cost) * 100
         max_size_usd = min_size * (1.0 - total_cost) if total_cost < 1.0 else 0.0
 
-        if edge_cents >= MIN_EDGE_CENTS and min_size >= MIN_SIZE_USD:
+        if best_edge_cents >= MIN_EDGE_CENTS and min_size >= MIN_SIZE_USD:
             # Second pass: compute max deployable size walking the book
             min_edge = MIN_EDGE_CENTS / 100  # e.g. 0.005
 
@@ -823,6 +824,7 @@ def check_arb(pair: EventPair, ob_manager: OrderbookManager) -> list[ArbOpportun
                 legs=deploy_legs,
                 total_cost=best_deploy_cost,
                 edge_cents=(1.0 - best_deploy_cost) * 100,
+                best_edge_cents=best_edge_cents,
                 max_size_usd=best_deploy,
                 pnl_usd=round(pnl_usd, 2),
                 coverage=f"{n_above} above + {n_between} between legs: {coverage_desc}",
@@ -1022,7 +1024,8 @@ def log_opportunity(opp: ArbOpportunity):
     """Log an arbitrage opportunity to file and console."""
     log.info(
         f"ARB FOUND | {opp.asset} {opp.event_date} | "
-        f"edge={opp.edge_cents:.1f}c | cost={opp.total_cost:.4f} | "
+        f"best_edge={opp.best_edge_cents:.1f}c | edge@size={opp.edge_cents:.1f}c | "
+        f"cost={opp.total_cost:.4f} | "
         f"size={opp.max_size_usd:.0f} shares | PnL=${opp.pnl_usd:.2f} | legs={len(opp.legs)}"
     )
     for leg in opp.legs:
@@ -1040,12 +1043,14 @@ def log_opportunity(opp: ArbOpportunity):
         writer = csv.writer(f)
         if write_header:
             writer.writerow([
-                "timestamp", "asset", "date", "edge_cents", "cost_per_share",
-                "shares", "total_cost_usd", "pnl_usd", "n_legs", "leg_details", "coverage",
+                "timestamp", "asset", "date", "best_edge_cents", "edge_at_size_cents",
+                "cost_per_share", "shares", "total_cost_usd", "pnl_usd",
+                "n_legs", "leg_details", "coverage",
             ])
         writer.writerow([
             opp.timestamp, opp.asset, opp.event_date,
-            f"{opp.edge_cents:.2f}", f"{opp.total_cost:.4f}",
+            f"{opp.best_edge_cents:.2f}", f"{opp.edge_cents:.2f}",
+            f"{opp.total_cost:.4f}",
             f"{opp.max_size_usd:.0f}", f"{total_cost_usd:.2f}", f"{opp.pnl_usd:.2f}",
             len(opp.legs), leg_details, opp.coverage,
         ])
@@ -1057,7 +1062,8 @@ def log_opportunity(opp: ArbOpportunity):
             "timestamp": opp.timestamp,
             "asset": opp.asset,
             "event_date": opp.event_date,
-            "edge_cents": round(opp.edge_cents, 2),
+            "best_edge_cents": round(opp.best_edge_cents, 2),
+            "edge_at_size_cents": round(opp.edge_cents, 2),
             "total_cost": round(opp.total_cost, 4),
             "max_size_usd": round(opp.max_size_usd, 2),
             "pnl_usd": opp.pnl_usd,
@@ -1154,7 +1160,7 @@ async def run_scanner():
                 last_refresh = time.time()
                 last_data = time.time()
                 snapshots_loaded = False
-                # Track last logged arbs to avoid spamming: key -> (edge_cents, max_size)
+                # Track last logged arbs to avoid spamming: key -> (best_edge_cents, max_size)
                 last_logged_arbs: dict[str, tuple[float, float]] = {}
                 # Track arb lifecycle: key -> {first_seen_time, first_seen_iso, initial_edge, initial_size, peak_edge, peak_size}
                 arb_lifecycle: dict[str, dict] = {}
@@ -1273,14 +1279,14 @@ async def run_scanner():
                                 prev = last_logged_arbs.get(key)
                                 if prev is None:
                                     log_opportunity(opp)
-                                    last_logged_arbs[key] = (opp.edge_cents, opp.max_size_usd)
+                                    last_logged_arbs[key] = (opp.best_edge_cents, opp.max_size_usd)
                                     if key not in arb_lifecycle:
                                         arb_lifecycle[key] = {
                                             "first_seen_time": time.time(),
                                             "first_seen_iso": opp.timestamp,
-                                            "initial_edge": opp.edge_cents,
+                                            "initial_edge": opp.best_edge_cents,
                                             "initial_size": opp.max_size_usd,
-                                            "peak_edge": opp.edge_cents,
+                                            "peak_edge": opp.best_edge_cents,
                                             "peak_size": opp.max_size_usd,
                                         }
                                 else:
@@ -1289,12 +1295,12 @@ async def run_scanner():
                                     size_changed = prev_size > 0 and abs(opp.max_size_usd - prev_size) / prev_size >= SIZE_CHANGE_RATIO
                                     if edge_changed or size_changed:
                                         log_opportunity(opp)
-                                        last_logged_arbs[key] = (opp.edge_cents, opp.max_size_usd)
+                                        last_logged_arbs[key] = (opp.best_edge_cents, opp.max_size_usd)
                                     # Update peaks
                                     lc = arb_lifecycle.get(key)
                                     if lc:
-                                        if opp.edge_cents > lc["peak_edge"]:
-                                            lc["peak_edge"] = opp.edge_cents
+                                        if opp.best_edge_cents > lc["peak_edge"]:
+                                            lc["peak_edge"] = opp.best_edge_cents
                                         if opp.max_size_usd > lc["peak_size"]:
                                             lc["peak_size"] = opp.max_size_usd
 
