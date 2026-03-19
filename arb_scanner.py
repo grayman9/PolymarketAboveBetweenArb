@@ -829,9 +829,22 @@ def check_arb(pair: EventPair, ob_manager: OrderbookManager) -> list[ArbOpportun
             )
             opportunities.append(opp)
 
-    # Sort by edge descending
-    opportunities.sort(key=lambda x: -x.edge_cents)
-    return opportunities
+    # Deduplicate coverings that span the same price range.
+    # E.g. "Below $62k [between] + ..." and "Above $62k NO [above] + ..."
+    # cover the same outcomes but use different tail tokens.
+    # Keep only the best (lowest cost) per unique range.
+    best_by_range: dict[str, ArbOpportunity] = {}
+    for opp in opportunities:
+        # Extract dollar thresholds from leg descriptions to form a range key
+        prices = re.findall(r'\$[\d,]+(?:\.\d+)?', opp.coverage)
+        range_key = f"{opp.asset}|{opp.event_date}|{'|'.join(sorted(set(prices)))}"
+        prev = best_by_range.get(range_key)
+        if prev is None or opp.total_cost < prev.total_cost:
+            best_by_range[range_key] = opp
+
+    deduped = list(best_by_range.values())
+    deduped.sort(key=lambda x: -x.edge_cents)
+    return deduped
 
 
 # ---------------------------------------------------------------------------
@@ -1147,6 +1160,8 @@ async def run_scanner():
                 arb_lifecycle: dict[str, dict] = {}
                 EDGE_CHANGE_THRESHOLD = 0.1  # re-log if edge changes by 0.1c
                 SIZE_CHANGE_RATIO = 0.2      # re-log if size changes by 20%
+                GONE_COOLDOWN_S = 10         # seconds before confirming arb is truly gone
+                pending_gone: dict[str, float] = {}  # key -> time when first disappeared
                 snapshot_start = time.time()
                 last_snapshot_log = 0  # track when we last logged snapshot progress
 
@@ -1252,6 +1267,9 @@ async def run_scanner():
                             for opp in opps:
                                 key = f"{opp.asset}|{opp.event_date}|{opp.coverage}"
                                 active_keys.add(key)
+                                # Cancel pending cooldown if arb is back
+                                pending_gone.pop(key, None)
+
                                 prev = last_logged_arbs.get(key)
                                 if prev is None:
                                     log_opportunity(opp)
@@ -1279,9 +1297,23 @@ async def run_scanner():
                                             lc["peak_edge"] = opp.edge_cents
                                         if opp.max_size_usd > lc["peak_size"]:
                                             lc["peak_size"] = opp.max_size_usd
-                        # Log when arbs disappear, including how long they lasted
-                        gone = set(last_logged_arbs) - active_keys
-                        for key in gone:
+
+                        # Mark newly disappeared arbs as pending (start cooldown)
+                        newly_gone = set(last_logged_arbs) - active_keys
+                        now_t = time.time()
+                        for key in newly_gone:
+                            if key not in pending_gone:
+                                pending_gone[key] = now_t
+
+                        # Confirm arbs that have been gone longer than cooldown
+                        confirmed_gone = [
+                            k for k, t in pending_gone.items()
+                            if now_t - t >= GONE_COOLDOWN_S
+                        ]
+                        for key in confirmed_gone:
+                            del pending_gone[key]
+                            if key not in last_logged_arbs:
+                                continue
                             asset, date, coverage = key.split("|", 2)
                             lc = arb_lifecycle.pop(key, None)
                             duration_s = time.time() - lc["first_seen_time"] if lc else 0.0
