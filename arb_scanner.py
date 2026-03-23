@@ -45,6 +45,10 @@ SCAN_DAYS_AHEAD = 7        # how many days ahead to scan
 REFRESH_INTERVAL = 3600    # re-discover events every hour (seconds)
 STALE_TIMEOUT = 60         # force reconnect if no data for this many seconds
 
+# Execution config
+TRADING_MODE = "LIVE"     # "PAPER" = log only (no orders), "LIVE" = place real orders
+MAX_TRADE_SIZE = 20        # max shares per leg (caps deployable size for live trades)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -1134,6 +1138,17 @@ async def run_scanner():
 
     ob_manager = OrderbookManager()
     sim = Simulator()
+
+    # Initialize live executor if in LIVE mode
+    live_executor = None
+    if TRADING_MODE == "LIVE":
+        from executor import ArbExecutor
+        live_executor = ArbExecutor(max_trade_size=MAX_TRADE_SIZE)
+        live_executor.initialize()
+        log.info(f"Live executor ready (max_trade_size={MAX_TRADE_SIZE} shares)")
+    else:
+        log.info(f"Running in PAPER mode (no live orders)")
+
     reconnect_delay = 1
     last_sim_summary = time.time()
 
@@ -1352,11 +1367,33 @@ async def run_scanner():
                         sim.check_exits(ob_manager)
                         sim.check_entries(pairs, ob_manager)
 
+                        # Live executor: check exits and execute new opportunities
+                        if live_executor is not None:
+                            live_executor.check_exits(ob_manager)
+                            # Execute best opportunity per asset (same logic as simulator)
+                            active_assets = {
+                                p["asset"] for p in live_executor.positions.values()
+                            }
+                            best_per_asset: dict[str, tuple] = {}
+                            for p in pairs:
+                                if p.asset in active_assets:
+                                    continue
+                                opps = check_arb(p, ob_manager)
+                                for opp in opps:
+                                    prev = best_per_asset.get(opp.asset)
+                                    if prev is None or opp.pnl_usd > prev[0].pnl_usd:
+                                        pair_key = f"{opp.asset}|{opp.event_date}"
+                                        best_per_asset[opp.asset] = (opp, pair_key)
+                            for _, (opp, pair_key) in best_per_asset.items():
+                                live_executor.execute_opportunity(opp, pair_key)
+
                         # Periodic sim summary (every 5 min)
                         now_t = time.time()
                         if now_t - last_sim_summary >= 300:
                             last_sim_summary = now_t
                             sim.summary()
+                            if live_executor is not None:
+                                live_executor.summary()
 
                     # Hourly refresh: discover new events, sub/unsub tokens
                     if time.time() - last_refresh >= REFRESH_INTERVAL:
