@@ -363,6 +363,7 @@ class ArbExecutor:
 
         _patch_clob_http()
 
+        self._proxy_address = proxy_address
         self.client = ClobClient(
             "https://clob.polymarket.com",
             key=private_key,
@@ -468,7 +469,7 @@ class ArbExecutor:
                 )
                 continue
 
-            # Regular position: verify leg balances
+            # Regular position: verify leg balances via data API
             all_legs_ok = True
             for lg in pos["legs"]:
                 balance = self._check_balance(lg["token_id"])
@@ -642,33 +643,26 @@ class ArbExecutor:
     def _check_balance(self, token_id: str) -> float:
         """Check how many shares we hold for a given token.
 
-        Tries CONDITIONAL first, then NEG_RISK if the token is neg_risk.
-        Returns balance as float, 0.0 on error.
+        Uses the data-api positions endpoint which returns actual on-chain
+        holdings for the proxy wallet. The CLOB balance-allowance endpoint
+        does NOT return held shares (only CLOB-available balance).
         """
         try:
-            # Determine correct asset type from token meta cache
-            meta = self.meta_cache.get(token_id)
-            asset_type = "NEG_RISK" if (meta and meta.get("neg_risk")) else "CONDITIONAL"
-
-            params = BalanceAllowanceParams(
-                asset_type=asset_type,
-                token_id=token_id,
+            import requests as _req
+            resp = _req.get(
+                "https://data-api.polymarket.com/positions",
+                params={
+                    "user": self._proxy_address,
+                    "sizeThreshold": "0",
+                },
+                timeout=10,
             )
-            result = self.client.get_balance_allowance(params=params)
-            if isinstance(result, dict):
-                balance = float(result.get("balance", "0") or "0")
-                if balance > 0:
-                    return balance
-
-            # Fallback: try the other asset type in case meta was wrong
-            fallback_type = "CONDITIONAL" if asset_type == "NEG_RISK" else "NEG_RISK"
-            params = BalanceAllowanceParams(
-                asset_type=fallback_type,
-                token_id=token_id,
-            )
-            result = self.client.get_balance_allowance(params=params)
-            if isinstance(result, dict):
-                return float(result.get("balance", "0") or "0")
+            if resp.status_code != 200:
+                log.warning(f"  Balance check HTTP {resp.status_code}")
+                return 0.0
+            for pos in resp.json():
+                if pos.get("asset") == token_id:
+                    return float(pos.get("size", 0))
             return 0.0
         except Exception as e:
             log.warning(f"  Balance check failed for {token_id[:16]}...: {e}")
