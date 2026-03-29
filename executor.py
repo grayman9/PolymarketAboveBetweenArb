@@ -41,6 +41,17 @@ FILL_VERIFY_DELAY_S = 1.0
 UNWIND_RETRIES = 3
 UNWIND_RETRY_DELAY_S = 2.0
 
+# ---- Safety limits (defense-in-depth) ----
+# Global rate limit: max orders placed per rolling window
+MAX_ORDERS_PER_WINDOW = 20       # max orders in the window below
+RATE_LIMIT_WINDOW_S = 60         # rolling window in seconds
+# Circuit breaker: consecutive failures before halting all trading
+CIRCUIT_BREAKER_THRESHOLD = 5
+# Max open positions at any time
+MAX_OPEN_POSITIONS = 5
+# Cooldown after any execution failure
+FAILURE_COOLDOWN_S = 60
+
 
 # ---------------------------------------------------------------------------
 # Cloudflare TLS fingerprint patch
@@ -140,7 +151,18 @@ class ArbExecutor:
         self.meta_cache: TokenMetaCache | None = None
         # Track open positions: pair_key -> position info
         self.positions: dict[str, dict] = {}
+        # Cooldown: pair_key -> earliest retry time (monotonic)
+        # Prevents rapid-fire retries after partial fills / unwind failures
+        self._cooldown_until: dict[str, float] = {}
         self._csv_header_written = EXECUTIONS_CSV.exists()
+
+        # --- Safety state ---
+        # Global rate limiter: timestamps of all orders placed
+        self._order_timestamps: list[float] = []
+        # Circuit breaker: consecutive execution failures
+        self._consecutive_failures = 0
+        self._circuit_open = False
+
         self._load_positions()
 
     def initialize(self):
@@ -230,6 +252,66 @@ class ArbExecutor:
                 del self.positions[pk]
             self._save_positions()
             log.info(f"Removed {len(to_remove)} stale positions")
+
+    # ------------------------------------------------------------------
+    # Safety checks (defense-in-depth)
+    # ------------------------------------------------------------------
+    def _check_rate_limit(self, n_orders: int) -> bool:
+        """Return True if placing n_orders would exceed the global rate limit."""
+        now = time.monotonic()
+        # Prune old timestamps outside the window
+        cutoff = now - RATE_LIMIT_WINDOW_S
+        self._order_timestamps = [t for t in self._order_timestamps if t > cutoff]
+        if len(self._order_timestamps) + n_orders > MAX_ORDERS_PER_WINDOW:
+            log.error(
+                f"RATE LIMIT | {len(self._order_timestamps)} orders in last "
+                f"{RATE_LIMIT_WINDOW_S}s + {n_orders} new > "
+                f"{MAX_ORDERS_PER_WINDOW} limit — BLOCKING"
+            )
+            return True
+        return False
+
+    def _record_orders(self, count: int):
+        """Record that `count` orders were placed (for rate limiting)."""
+        now = time.monotonic()
+        self._order_timestamps.extend([now] * count)
+
+    def _record_success(self):
+        """Reset consecutive failure count on a successful execution."""
+        self._consecutive_failures = 0
+
+    def _record_failure(self, pair_key: str):
+        """Increment failure count and apply cooldown.
+
+        If consecutive failures reach the threshold, open the circuit breaker
+        which halts ALL trading until manually reset.
+        """
+        self._consecutive_failures += 1
+        self._cooldown_until[pair_key] = time.monotonic() + FAILURE_COOLDOWN_S
+        if self._consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD:
+            self._circuit_open = True
+            log.error(
+                f"CIRCUIT BREAKER OPEN | {self._consecutive_failures} "
+                f"consecutive failures — ALL TRADING HALTED. "
+                f"Investigate and restart to resume."
+            )
+
+    def _pre_execute_checks(self, pair_key: str, n_legs: int) -> str | None:
+        """Run all safety checks before execution.
+
+        Returns None if all checks pass, or an error reason string.
+        """
+        if self._circuit_open:
+            return "circuit breaker open"
+        if pair_key in self.positions:
+            return "position already open"
+        if time.monotonic() < self._cooldown_until.get(pair_key, 0):
+            return "cooldown active"
+        if len(self.positions) >= MAX_OPEN_POSITIONS:
+            return f"max positions ({MAX_OPEN_POSITIONS}) reached"
+        if self._check_rate_limit(n_legs):
+            return "rate limit"
+        return None
 
     # ------------------------------------------------------------------
     # Order placement helpers
@@ -329,6 +411,7 @@ class ArbExecutor:
         """Execute an arb by placing FOK buy orders for all legs.
 
         Steps:
+          0. Pre-execute safety checks (circuit breaker, rate limit, cooldown, etc.)
           1. Place FOK BUY for each leg concurrently
           2. Wait briefly for settlement
           3. Verify each fill via get_order()
@@ -337,15 +420,36 @@ class ArbExecutor:
 
         Returns True if all legs confirmed filled.
         """
-        if pair_key in self.positions:
-            return False
-
+        n_legs = len(opp.legs)
         size = min(opp.max_size_usd, self.max_trade_size)
         if size < 1:
             return False
 
+        # Run ALL safety checks before touching the exchange
+        block_reason = self._pre_execute_checks(pair_key, n_legs)
+        if block_reason:
+            return False
+
+        # === CRITICAL SECTION ===
+        # Any unhandled exception MUST trigger _record_failure so the pair
+        # goes on cooldown and the circuit breaker can trip. Without this,
+        # a crash between order placement and failure recording would allow
+        # the next cycle to retry immediately — the exact bug that caused
+        # the order spam incident.
+        try:
+            return self._execute_inner(opp, pair_key, size, n_legs)
+        except Exception as e:
+            log.error(
+                f"EXEC CRASH | {opp.asset} {opp.event_date} | "
+                f"{type(e).__name__}: {e}"
+            )
+            self._record_failure(pair_key)
+            return False
+
+    def _execute_inner(self, opp, pair_key: str, size: float,
+                       n_legs: int) -> bool:
+        """Inner execution logic, wrapped by execute_opportunity's safety net."""
         legs = opp.legs
-        n_legs = len(legs)
         log.info(
             f"EXEC BUY   | {opp.asset} {opp.event_date} | "
             f"{size:.0f} shares | {n_legs} legs | "
@@ -391,6 +495,8 @@ class ArbExecutor:
 
         exec_time_ms = (time.time() - start_time) * 1000
         sent = [r for r in results if r["success"]]
+        # Record orders placed for global rate limiting
+        self._record_orders(len(sent))
 
         if not sent:
             log.warning(
@@ -398,6 +504,7 @@ class ArbExecutor:
                 f"no orders accepted"
             )
             self._log_execution(opp, size, results, "ALL_REJECTED", exec_time_ms)
+            self._record_failure(pair_key)
             return False
 
         # 2. Wait for settlement
@@ -429,7 +536,7 @@ class ArbExecutor:
                 )
 
         # 4. Confirm balances for verified fills
-        for r in confirmed:
+        for r in list(confirmed):  # iterate copy — safe to modify original
             balance = self._check_balance(r["token_id"])
             if balance < size - 0.01:
                 log.warning(
@@ -460,6 +567,7 @@ class ArbExecutor:
             }
             self._save_positions()
             self._log_execution(opp, size, results, "FILLED", total_exec_ms)
+            self._record_success()
             return True
         else:
             # 5. Partial fill — unwind confirmed legs
@@ -471,6 +579,7 @@ class ArbExecutor:
                 self._unwind_legs(confirmed, size)
             self._log_execution(opp, size, results, "PARTIAL_UNWOUND",
                                 total_exec_ms)
+            self._record_failure(pair_key)
             return False
 
     # ------------------------------------------------------------------
@@ -499,8 +608,10 @@ class ArbExecutor:
                         break
 
                     # Get fresh bid from REST (most current for unwind)
+                    # py-clob-client returns an OrderBookSummary object,
+                    # not a dict — access .bids attribute directly.
                     book = self.client.get_order_book(r["token_id"])
-                    bids = book.get("bids", [])
+                    bids = getattr(book, "bids", None) or []
                     if not bids:
                         log.warning(
                             f"  UNWIND NO BIDS | {r['description']} | "
@@ -510,7 +621,8 @@ class ArbExecutor:
                         continue
 
                     # Use best bid, drop price on retries to increase fill chance
-                    best_bid = float(bids[0]["price"])
+                    # bids are OrderSummary objects with .price attribute
+                    best_bid = float(bids[0].price if hasattr(bids[0], 'price') else bids[0]["price"])
                     # On retry, accept 1 tick worse per attempt
                     meta = self.meta_cache.get(r["token_id"])
                     tick = float(meta["tick_size"])
