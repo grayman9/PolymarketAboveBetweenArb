@@ -1444,10 +1444,19 @@ async def run_scanner():
                             for _, (opp, pair_key) in best_per_asset.items():
                                 live_executor.execute_opportunity(opp, pair_key)
 
-                        # Periodic sim summary (every 5 min)
+                        # Periodic heartbeat + summary (every 5 min)
                         now_t = time.time()
                         if now_t - last_sim_summary >= 300:
                             last_sim_summary = now_t
+                            n_books = len(ob_manager.books)
+                            n_active = len(active_keys)
+                            n_pos = len(live_executor.positions) if live_executor else 0
+                            log.info(
+                                f"HEARTBEAT | {len(pairs)} pairs | "
+                                f"{n_books} books | {n_active} active arbs | "
+                                f"{n_pos} open positions | "
+                                f"mode={TRADING_MODE}"
+                            )
                             sim.summary()
                             if live_executor is not None:
                                 live_executor.summary()
