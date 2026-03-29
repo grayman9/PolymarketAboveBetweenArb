@@ -1,20 +1,24 @@
 """
 Live order executor for arb coverings.
 
-Places FOK (Fill-or-Kill) orders for all legs of a covering.
-Handles partial fills by verifying fills via API and unwinding if incomplete.
-Uses live WebSocket orderbook data for exit pricing.
+Places GTC limit orders for all legs of a covering.
+Uses a user WebSocket for instant fill notifications.
+On partial fill: keeps unfilled buy alive + posts GTC sells on filled
+legs — whichever side completes first wins.
 """
 
+import asyncio
 import csv
 import json
 import logging
 import os
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
+import websockets
 from dotenv import load_dotenv
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import (
@@ -32,14 +36,14 @@ LOG_DIR = Path(__file__).parent / "logs"
 EXECUTIONS_CSV = LOG_DIR / "executions.csv"
 POSITIONS_FILE = LOG_DIR / "open_positions.json"
 
-# How long to wait for fills to settle before verifying
-FILL_SETTLE_DELAY_S = 1.0
-# Max retries when verifying order fill status
+# How long to wait for GTC limit orders to fill before evaluating
+FILL_TIMEOUT_S = 180         # 3 minutes — arbs persist for minutes per duration data
+FILL_POLL_INTERVAL_S = 5     # check fill status every 5s during timeout
+# How long to wait after all fills before verifying balances
+FILL_SETTLE_DELAY_S = 5.0
+# Fill verification (REST fallback when WS is down)
 FILL_VERIFY_RETRIES = 3
-FILL_VERIFY_DELAY_S = 1.0
-# Max retries for unwind sell orders
-UNWIND_RETRIES = 3
-UNWIND_RETRY_DELAY_S = 2.0
+FILL_VERIFY_DELAY_S = 2.0
 
 # ---- Safety limits (defense-in-depth) ----
 # Global rate limit: max orders placed per rolling window
@@ -128,27 +132,209 @@ class TokenMetaCache:
 
 # ---------------------------------------------------------------------------
 # Executor
+USER_WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/user"
+USER_WS_PING_INTERVAL = 10  # seconds
+
+
+# ---------------------------------------------------------------------------
+# User WebSocket: instant fill notifications
+# ---------------------------------------------------------------------------
+class UserFillTracker:
+    """Connects to Polymarket's user WebSocket for real-time fill events.
+
+    Runs in a background thread. Call watch_orders() to register order IDs,
+    then wait_for_fills() to block until all fill or timeout.
+    """
+
+    def __init__(self, api_key: str, api_secret: str, api_passphrase: str):
+        self._auth = {
+            "apiKey": api_key,
+            "secret": api_secret,
+            "passphrase": api_passphrase,
+        }
+        # order_id -> {"size_matched": float, "filled": bool}
+        self._watched: dict[str, dict] = {}
+        self._lock = threading.Lock()
+        self._fill_event = threading.Event()  # signaled on any new fill
+        self._thread: threading.Thread | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._running = False
+
+    def start(self):
+        """Start the background WebSocket listener thread."""
+        if self._thread and self._thread.is_alive():
+            return
+        self._running = True
+        self._thread = threading.Thread(target=self._run, daemon=True,
+                                        name="user-ws")
+        self._thread.start()
+
+    def stop(self):
+        self._running = False
+        if self._loop:
+            self._loop.call_soon_threadsafe(self._loop.stop)
+
+    def _run(self):
+        """Background thread: run the async WS in its own event loop."""
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
+        while self._running:
+            try:
+                self._loop.run_until_complete(self._ws_loop())
+            except Exception as e:
+                log.warning(f"User WS error: {e} — reconnecting in 3s...")
+                time.sleep(3)
+
+    async def _ws_loop(self):
+        async with websockets.connect(USER_WS_URL,
+                                      ping_interval=None) as ws:
+            # Authenticate
+            sub_msg = {
+                "auth": self._auth,
+                "type": "user",
+            }
+            await ws.send(json.dumps(sub_msg))
+            log.info("User WS connected and authenticated")
+
+            # After reconnect, mark that watched orders may have missed
+            # fills. The wait_for_fills caller should REST-verify on timeout.
+            self._ws_connected = True
+
+            # Ping task
+            async def ping():
+                while self._running:
+                    await asyncio.sleep(USER_WS_PING_INTERVAL)
+                    try:
+                        await ws.send("PING")
+                    except Exception:
+                        return
+
+            ping_task = asyncio.ensure_future(ping())
+
+            try:
+                async for raw in ws:
+                    if raw == "PONG":
+                        continue
+                    try:
+                        msg = json.loads(raw)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+                    self._handle_message(msg)
+            finally:
+                ping_task.cancel()
+
+    def _handle_message(self, msg: dict):
+        """Process an incoming user WS message."""
+        event_type = msg.get("event_type")
+
+        if event_type == "trade":
+            order_id = msg.get("taker_order_id", "")
+            matched_size = float(msg.get("size", "0") or "0")
+            with self._lock:
+                if order_id in self._watched:
+                    self._watched[order_id]["size_matched"] += matched_size
+                    log.info(
+                        f"  WS FILL | order={order_id[:16]}... | "
+                        f"+{matched_size:.1f} shares | "
+                        f"total={self._watched[order_id]['size_matched']:.1f}"
+                    )
+                    if self._watched[order_id]["size_matched"] >= \
+                       self._watched[order_id]["target"] - 0.01:
+                        self._watched[order_id]["filled"] = True
+                    self._fill_event.set()
+
+        elif event_type == "order":
+            order_id = msg.get("id", "")
+            with self._lock:
+                if order_id in self._watched:
+                    size_matched = float(
+                        msg.get("size_matched", "0") or "0"
+                    )
+                    self._watched[order_id]["size_matched"] = size_matched
+                    if size_matched >= \
+                       self._watched[order_id]["target"] - 0.01:
+                        self._watched[order_id]["filled"] = True
+                        self._fill_event.set()
+                    status = msg.get("status", "")
+                    if status in ("CANCELED", "EXPIRED"):
+                        self._watched[order_id]["cancelled"] = True
+                        self._fill_event.set()
+
+    def watch_orders(self, orders: dict[str, float]):
+        """Register order IDs to watch. orders = {order_id: target_size}."""
+        with self._lock:
+            for oid, target in orders.items():
+                self._watched[oid] = {
+                    "size_matched": 0.0,
+                    "target": target,
+                    "filled": False,
+                    "cancelled": False,
+                }
+
+    def unwatch(self, order_ids: list[str]):
+        """Stop watching these order IDs."""
+        with self._lock:
+            for oid in order_ids:
+                self._watched.pop(oid, None)
+
+    def get_status(self, order_id: str) -> dict:
+        """Get current fill status for a watched order.
+
+        Returns empty dict if not watched — never None.
+        """
+        with self._lock:
+            entry = self._watched.get(order_id)
+            return entry.copy() if entry else {}
+
+    def wait_for_fills(self, order_ids: list[str],
+                       timeout: float) -> dict[str, dict]:
+        """Block until all order_ids are filled, or timeout.
+
+        Returns {order_id: status_dict} for all watched orders.
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            with self._lock:
+                all_done = all(
+                    self._watched.get(oid, {}).get("filled", False) or
+                    self._watched.get(oid, {}).get("cancelled", False)
+                    for oid in order_ids
+                )
+                if all_done:
+                    break
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            # Wait for any fill event, then re-check
+            self._fill_event.wait(timeout=min(remaining, 1.0))
+            self._fill_event.clear()
+
+        with self._lock:
+            return {oid: self._watched.get(oid, {}).copy()
+                    for oid in order_ids}
+
+
 # ---------------------------------------------------------------------------
 class ArbExecutor:
     """Places live orders for arb coverings.
 
     Entry flow:
-      1. Place FOK buy orders for all legs concurrently
-      2. Verify each fill via get_order() API
-      3. Confirm share balances via get_balance_allowance()
-      4. If any leg failed: unwind filled legs by selling shares back
+      1. Place GTC limit buys for all legs concurrently
+      2. Wait for fills via user WebSocket (instant notifications)
+      3. On partial fill: keep unfilled buy alive + post GTC sells on
+         filled legs — whichever side completes first wins
 
     Exit flow:
       1. Detect exit via live WebSocket bids (ob_manager) — no REST call
       2. Verify share balances before selling
-      3. Place FOK sell orders for all legs concurrently using ob_manager bids
-      4. Confirm sells via get_order()
+      3. Place GTC sell orders for all legs using ob_manager bids
     """
 
     def __init__(self, max_trade_size: float):
         self.max_trade_size = max_trade_size
         self.client: ClobClient | None = None
         self.meta_cache: TokenMetaCache | None = None
+        self.fill_tracker: UserFillTracker | None = None
         # Track open positions: pair_key -> position info
         self.positions: dict[str, dict] = {}
         # Cooldown: pair_key -> earliest retry time (monotonic)
@@ -190,6 +376,16 @@ class ArbExecutor:
             raise RuntimeError("ClobClient authentication failed")
 
         self.meta_cache = TokenMetaCache(self.client)
+
+        # Start user WebSocket for instant fill notifications
+        creds = self.client.creds
+        self.fill_tracker = UserFillTracker(
+            api_key=creds.api_key,
+            api_secret=creds.api_secret,
+            api_passphrase=creds.api_passphrase,
+        )
+        self.fill_tracker.start()
+
         log.info("ArbExecutor initialized (live mode)")
         if self.positions:
             log.info(f"Restored {len(self.positions)} open positions — reconciling balances...")
@@ -220,12 +416,59 @@ class ArbExecutor:
     def _reconcile_positions(self):
         """Verify restored positions still have shares on-chain.
 
-        For each position, check that every leg's balance >= the bot's
-        tracked size. If any leg has been manually closed (balance < size),
-        remove the position — assume the operator handled it.
+        For regular positions: check legs have shares, remove stale ones.
+        For RACING positions: cancel any leftover orders and clean up
+        based on current balances — the race can't survive a restart.
         """
         to_remove = []
         for pk, pos in self.positions.items():
+            status = pos.get("status")
+
+            if status == "RACING":
+                # Cancel any leftover buy/sell orders from the race
+                log.info(
+                    f"  RACING | {pos['asset']} {pos['event_date']} | "
+                    f"cancelling leftover orders from pre-restart race"
+                )
+                for order in pos.get("buy_orders", []):
+                    self._cancel_order(order.get("order_id", ""))
+                for order in pos.get("sell_orders", []):
+                    self._cancel_order(order.get("order_id", ""))
+                # Check if we still hold shares on the filled legs
+                has_shares = False
+                for lg in pos.get("legs", []):
+                    balance = self._check_balance(lg["token_id"])
+                    if balance >= 0.5:
+                        has_shares = True
+                        log.warning(
+                            f"  RACING | {lg.get('description', '')} | "
+                            f"balance={balance:.1f} — MANUAL CLEANUP NEEDED"
+                        )
+                if not has_shares:
+                    to_remove.append(pk)
+                else:
+                    # Convert to a regular unhedged position for tracking
+                    pos.pop("status", None)
+                    pos.pop("buy_orders", None)
+                    pos.pop("sell_orders", None)
+                    log.warning(
+                        f"  RACING → UNHEDGED | {pos['asset']} "
+                        f"{pos['event_date']} | saved for manual handling"
+                    )
+                continue
+
+            if status == "UNWINDING":
+                # Same treatment — cancel orders, check balances
+                for order in pos.get("sell_orders", []):
+                    self._cancel_order(order.get("order_id", ""))
+                to_remove.append(pk)
+                log.info(
+                    f"  UNWINDING | {pos['asset']} {pos['event_date']} | "
+                    f"cleaned up — check balances manually"
+                )
+                continue
+
+            # Regular position: verify leg balances
             all_legs_ok = True
             for lg in pos["legs"]:
                 balance = self._check_balance(lg["token_id"])
@@ -317,8 +560,9 @@ class ArbExecutor:
     # Order placement helpers
     # ------------------------------------------------------------------
     def _place_order(self, token_id: str, side: str, price: float,
-                     size: float) -> dict:
-        """Place a single FOK order (buy or sell). Returns result dict."""
+                     size: float,
+                     order_type: OrderType = OrderType.GTC) -> dict:
+        """Place an order (GTC by default). Returns result dict."""
         meta = self.meta_cache.get(token_id)
         order_args = OrderArgs(
             price=price,
@@ -332,7 +576,7 @@ class ArbExecutor:
             neg_risk=meta["neg_risk"],
         )
         signed_order = self.client.create_order(order_args, order_options)
-        resp = self.client.post_order(signed_order, OrderType.FOK)
+        resp = self.client.post_order(signed_order, order_type)
 
         order_id = ""
         success = False
@@ -349,6 +593,15 @@ class ArbExecutor:
             "success": success,
             "order_id": order_id,
         }
+
+    def _cancel_order(self, order_id: str) -> bool:
+        """Cancel an open order. Returns True if successful."""
+        try:
+            self.client.cancel(order_id)
+            return True
+        except Exception as e:
+            log.warning(f"  Cancel failed for {order_id}: {e}")
+            return False
 
     # ------------------------------------------------------------------
     # Fill verification
@@ -389,11 +642,28 @@ class ArbExecutor:
     def _check_balance(self, token_id: str) -> float:
         """Check how many shares we hold for a given token.
 
+        Tries CONDITIONAL first, then NEG_RISK if the token is neg_risk.
         Returns balance as float, 0.0 on error.
         """
         try:
+            # Determine correct asset type from token meta cache
+            meta = self.meta_cache.get(token_id)
+            asset_type = "NEG_RISK" if (meta and meta.get("neg_risk")) else "CONDITIONAL"
+
             params = BalanceAllowanceParams(
-                asset_type="CONDITIONAL",
+                asset_type=asset_type,
+                token_id=token_id,
+            )
+            result = self.client.get_balance_allowance(params=params)
+            if isinstance(result, dict):
+                balance = float(result.get("balance", "0") or "0")
+                if balance > 0:
+                    return balance
+
+            # Fallback: try the other asset type in case meta was wrong
+            fallback_type = "CONDITIONAL" if asset_type == "NEG_RISK" else "NEG_RISK"
+            params = BalanceAllowanceParams(
+                asset_type=fallback_type,
                 token_id=token_id,
             )
             result = self.client.get_balance_allowance(params=params)
@@ -422,8 +692,17 @@ class ArbExecutor:
         """
         n_legs = len(opp.legs)
         size = min(opp.max_size_usd, self.max_trade_size)
-        if size < 1:
+        # Polymarket taker minimums: 5 shares, $1 per order
+        if size < 5:
             return False
+        # Verify every leg meets $1 minimum
+        for lg in opp.legs:
+            if lg["avg_price"] * size < 1.0:
+                log.debug(
+                    f"EXEC SKIP | {lg['description']} | "
+                    f"${lg['avg_price'] * size:.2f} < $1 minimum"
+                )
+                return False
 
         # Run ALL safety checks before touching the exchange
         block_reason = self._pre_execute_checks(pair_key, n_legs)
@@ -448,7 +727,16 @@ class ArbExecutor:
 
     def _execute_inner(self, opp, pair_key: str, size: float,
                        n_legs: int) -> bool:
-        """Inner execution logic, wrapped by execute_opportunity's safety net."""
+        """Inner execution logic, wrapped by execute_opportunity's safety net.
+
+        Flow:
+          1. Place GTC limit buys for all legs concurrently
+          2. Wait for fills via user WebSocket (instant notifications)
+          3. After timeout, evaluate:
+             - All legs filled → position confirmed
+             - Partial → keep unfilled buys alive + post GTC sells on
+               filled legs. Whichever side completes first wins.
+        """
         legs = opp.legs
         log.info(
             f"EXEC BUY   | {opp.asset} {opp.event_date} | "
@@ -456,7 +744,7 @@ class ArbExecutor:
             f"edge={opp.edge_cents:.2f}c | cost={opp.total_cost:.4f}"
         )
 
-        # 1. Place all buy orders concurrently
+        # 1. Place all GTC limit buy orders concurrently
         results = []
         start_time = time.time()
         with ThreadPoolExecutor(max_workers=n_legs) as pool:
@@ -465,6 +753,7 @@ class ArbExecutor:
                 fut = pool.submit(
                     self._place_order,
                     lg["token"], "BUY", lg["avg_price"], size,
+                    OrderType.GTC,
                 )
                 futures[fut] = lg
 
@@ -493,9 +782,7 @@ class ArbExecutor:
                         "description": lg["description"],
                     })
 
-        exec_time_ms = (time.time() - start_time) * 1000
         sent = [r for r in results if r["success"]]
-        # Record orders placed for global rate limiting
         self._record_orders(len(sent))
 
         if not sent:
@@ -503,54 +790,62 @@ class ArbExecutor:
                 f"EXEC FAIL  | {opp.asset} {opp.event_date} | "
                 f"no orders accepted"
             )
+            exec_time_ms = (time.time() - start_time) * 1000
             self._log_execution(opp, size, results, "ALL_REJECTED", exec_time_ms)
             self._record_failure(pair_key)
             return False
 
-        # 2. Wait for settlement
-        time.sleep(FILL_SETTLE_DELAY_S)
+        # 2. Register orders with the fill tracker and wait
+        watch_map = {r["order_id"]: size for r in sent}
+        self.fill_tracker.watch_orders(watch_map)
 
-        # 3. Verify fills
+        log.info(
+            f"  WAITING  | {len(sent)} GTC orders placed, "
+            f"waiting up to {FILL_TIMEOUT_S}s via user WS..."
+        )
+
+        fill_status = self.fill_tracker.wait_for_fills(
+            list(watch_map.keys()), timeout=FILL_TIMEOUT_S
+        )
+
+        # 3. Evaluate results — use WS status, then REST-verify unfilled
         confirmed = []
-        failed = []
-        for r in results:
-            if not r["success"]:
-                failed.append(r)
-                continue
-            fill_info = self._verify_fill(r["order_id"])
-            if fill_info and fill_info["size_matched"] >= size - 0.01:
+        unfilled = []
+        for r in sent:
+            st = fill_status.get(r["order_id"], {})
+            if st.get("filled"):
                 r["verified"] = True
-                r["fill_size"] = fill_info["size_matched"]
+                r["fill_size"] = st.get("size_matched", 0.0)
                 confirmed.append(r)
                 log.info(
-                    f"  VERIFIED | {r['description']} | "
-                    f"matched={fill_info['size_matched']:.1f}"
+                    f"  FILLED   | {r['description']} | "
+                    f"matched={r['fill_size']:.1f}"
                 )
             else:
-                r["verified"] = False
-                r["fill_size"] = fill_info["size_matched"] if fill_info else 0.0
-                failed.append(r)
-                log.warning(
-                    f"  NOT FILLED | {r['description']} | "
-                    f"matched={r['fill_size']:.1f} (needed {size:.0f})"
-                )
+                # REST fallback: WS may have missed fills during reconnect
+                fill_info = self._verify_fill(r["order_id"])
+                if fill_info and fill_info["size_matched"] >= size - 0.01:
+                    r["verified"] = True
+                    r["fill_size"] = fill_info["size_matched"]
+                    confirmed.append(r)
+                    log.info(
+                        f"  FILLED (REST) | {r['description']} | "
+                        f"matched={fill_info['size_matched']:.1f}"
+                    )
+                else:
+                    r["verified"] = False
+                    r["fill_size"] = st.get("size_matched", 0.0)
+                    unfilled.append(r)
+                    log.warning(
+                        f"  UNFILLED | {r['description']} | "
+                        f"matched={r['fill_size']:.1f} (needed {size:.0f})"
+                    )
 
-        # 4. Confirm balances for verified fills
-        for r in list(confirmed):  # iterate copy — safe to modify original
-            balance = self._check_balance(r["token_id"])
-            if balance < size - 0.01:
-                log.warning(
-                    f"  BALANCE LOW | {r['description']} | "
-                    f"balance={balance:.1f} < needed={size:.0f}"
-                )
-                r["verified"] = False
-                confirmed.remove(r)
-                failed.append(r)
-
+        self.fill_tracker.unwatch(list(watch_map.keys()))
         total_exec_ms = (time.time() - start_time) * 1000
 
         if len(confirmed) == n_legs:
-            # All legs confirmed
+            # All legs filled — position confirmed
             total_cost = sum(r["price"] * r["size"] for r in confirmed)
             log.info(
                 f"EXEC OK    | {opp.asset} {opp.event_date} | "
@@ -569,105 +864,191 @@ class ArbExecutor:
             self._log_execution(opp, size, results, "FILLED", total_exec_ms)
             self._record_success()
             return True
+        elif not confirmed:
+            # Nothing filled — cancel all and move on
+            for r in unfilled:
+                self._cancel_order(r["order_id"])
+                log.info(f"  CANCELLED | {r['description']}")
+            self._log_execution(opp, size, results, "NONE_FILLED",
+                                total_exec_ms)
+            self._record_failure(pair_key)
+            return False
         else:
-            # 5. Partial fill — unwind confirmed legs
+            # Partial fill — smart unwind:
+            #   Keep unfilled buys alive (they might still fill)
+            #   Post GTC sells on filled legs at entry price
+            #   Monitor both sides — whichever completes first wins
             log.warning(
                 f"EXEC PARTIAL | {opp.asset} {opp.event_date} | "
-                f"{len(confirmed)}/{n_legs} legs confirmed | unwinding..."
+                f"{len(confirmed)}/{n_legs} legs filled | "
+                f"racing: keeping buys + posting sells..."
             )
-            if confirmed:
-                self._unwind_legs(confirmed, size)
-            self._log_execution(opp, size, results, "PARTIAL_UNWOUND",
+            self._race_unwind(
+                confirmed, unfilled, size, opp, pair_key
+            )
+            self._log_execution(opp, size, results, "PARTIAL_RACING",
                                 total_exec_ms)
             self._record_failure(pair_key)
             return False
 
     # ------------------------------------------------------------------
-    # Unwind: sell back filled legs after partial fill
+    # Smart unwind: race buys vs sells after partial fill
     # ------------------------------------------------------------------
-    def _unwind_legs(self, legs_to_sell: list[dict], size: float):
-        """Sell back legs from a partial fill.
+    def _race_unwind(self, filled_legs: list[dict],
+                     unfilled_legs: list[dict], size: float,
+                     opp, pair_key: str):
+        """Handle partial fill by racing both sides.
 
-        Fetches fresh book via REST for unwind pricing (can't rely on
-        ob_manager here since the partial fill changes our urgency).
-        Retries with progressively worse prices.
+        Strategy:
+          - Keep unfilled buy GTC orders alive (they might still fill)
+          - Post GTC sell orders at entry price on filled legs
+          - Monitor via user WS — whichever side completes first:
+            - All buys fill → cancel sells, position is complete
+            - All sells fill → cancel remaining buys, clean exit
+          - Save to positions for tracking either way
         """
-        for r in legs_to_sell:
-            sold = False
-            for attempt in range(UNWIND_RETRIES):
-                try:
-                    # Verify we still hold shares
-                    balance = self._check_balance(r["token_id"])
-                    sell_size = min(size, balance)
-                    if sell_size < 0.5:
-                        log.info(
-                            f"  UNWIND SKIP | {r['description']} | "
-                            f"balance={balance:.1f} (nothing to sell)"
-                        )
-                        sold = True
-                        break
+        # Wait for settlement so filled shares are available to sell
+        log.info(f"  RACE | waiting {FILL_SETTLE_DELAY_S}s for settlement...")
+        time.sleep(FILL_SETTLE_DELAY_S)
 
-                    # Get fresh bid from REST (most current for unwind)
-                    # py-clob-client returns an OrderBookSummary object,
-                    # not a dict — access .bids attribute directly.
-                    book = self.client.get_order_book(r["token_id"])
-                    bids = getattr(book, "bids", None) or []
-                    if not bids:
-                        log.warning(
-                            f"  UNWIND NO BIDS | {r['description']} | "
-                            f"attempt {attempt + 1}"
-                        )
-                        time.sleep(UNWIND_RETRY_DELAY_S)
-                        continue
-
-                    # Use best bid, drop price on retries to increase fill chance
-                    # bids are OrderSummary objects with .price attribute
-                    best_bid = float(bids[0].price if hasattr(bids[0], 'price') else bids[0]["price"])
-                    # On retry, accept 1 tick worse per attempt
-                    meta = self.meta_cache.get(r["token_id"])
-                    tick = float(meta["tick_size"])
-                    sell_price = max(tick, best_bid - (attempt * tick))
-
-                    result = self._place_order(
-                        r["token_id"], "SELL", sell_price, sell_size,
-                    )
-
-                    if result["success"]:
-                        # Verify the sell filled
-                        time.sleep(FILL_SETTLE_DELAY_S)
-                        fill_info = self._verify_fill(result["order_id"])
-                        if fill_info and fill_info["size_matched"] >= sell_size - 0.01:
-                            log.info(
-                                f"  UNWIND OK | {r['description']} | "
-                                f"{sell_size:.0f} @ {sell_price:.4f}"
-                            )
-                            sold = True
-                            break
-                        else:
-                            log.warning(
-                                f"  UNWIND PARTIAL | {r['description']} | "
-                                f"matched={fill_info['size_matched'] if fill_info else 0:.1f}"
-                            )
-                    else:
-                        log.warning(
-                            f"  UNWIND REJECTED | {r['description']} | "
-                            f"attempt {attempt + 1} @ {sell_price:.4f}"
-                        )
-
-                    time.sleep(UNWIND_RETRY_DELAY_S)
-                except Exception as e:
-                    log.error(
-                        f"  UNWIND ERROR | {r['description']} | "
-                        f"attempt {attempt + 1}: {e}"
-                    )
-                    time.sleep(UNWIND_RETRY_DELAY_S)
-
-            if not sold:
-                log.error(
-                    f"  UNWIND FAILED | {r['description']} | "
-                    f"could not sell after {UNWIND_RETRIES} attempts — "
-                    f"MANUAL INTERVENTION NEEDED"
+        # Post GTC sells on filled legs at entry price.
+        # Use entry price (not current bid) — this is a passive order
+        # that sits on the book. We're not trying to force an immediate
+        # fill, we're racing against the remaining buys filling.
+        # Entry price is where we bought, so selling at entry = breakeven.
+        sell_results = []
+        for r in filled_legs:
+            sell_price = r["price"]
+            try:
+                result = self._place_order(
+                    r["token_id"], "SELL", sell_price, size,
+                    OrderType.GTC,
                 )
+                if result["success"]:
+                    log.info(
+                        f"  RACE SELL | {r['description']} | "
+                        f"{size:.0f} @ {sell_price:.4f} | "
+                        f"order_id={result['order_id']}"
+                    )
+                    sell_results.append({
+                        "order_id": result["order_id"],
+                        "token_id": r["token_id"],
+                        "description": r["description"],
+                        "price": r["price"],
+                        "size": size,
+                    })
+                else:
+                    log.warning(
+                        f"  RACE SELL REJECTED | {r['description']}"
+                    )
+            except Exception as e:
+                log.error(f"  RACE SELL ERROR | {r['description']} | {e}")
+
+        # Register all orders (remaining buys + new sells) with fill tracker
+        buy_ids = {r["order_id"]: size for r in unfilled_legs}
+        sell_ids = {s["order_id"]: size for s in sell_results}
+        all_race_ids = {**buy_ids, **sell_ids}
+        self.fill_tracker.watch_orders(all_race_ids)
+
+        # Save position so it's tracked across restarts
+        race_key = f"{pair_key}|race"
+        self.positions[race_key] = {
+            "asset": opp.asset,
+            "event_date": opp.event_date,
+            "size": size,
+            "entry_cost": sum(r["price"] * size for r in filled_legs),
+            "entry_time": datetime.now(timezone.utc).isoformat(),
+            "legs": filled_legs,
+            "status": "RACING",
+            "buy_orders": [{"order_id": r["order_id"],
+                            "token_id": r["token_id"],
+                            "description": r["description"],
+                            "price": r["price"],
+                            "size": size} for r in unfilled_legs],
+            "sell_orders": sell_results,
+        }
+        self._save_positions()
+
+        log.info(
+            f"  RACE | {len(buy_ids)} buys + {len(sell_ids)} sells active | "
+            f"waiting up to {FILL_TIMEOUT_S}s..."
+        )
+
+        # Monitor: check periodically which side is winning
+        deadline = time.time() + FILL_TIMEOUT_S
+        outcome = None
+
+        while time.time() < deadline and outcome is None:
+            self.fill_tracker.wait_for_fills(
+                list(all_race_ids.keys()),
+                timeout=min(FILL_POLL_INTERVAL_S, deadline - time.time()),
+            )
+
+            # Check if all buys filled
+            buys_done = all(
+                self.fill_tracker.get_status(oid).get("filled", False)
+                for oid in buy_ids
+            )
+            # Check if all sells filled
+            sells_done = all(
+                self.fill_tracker.get_status(oid).get("filled", False)
+                for oid in sell_ids
+            ) if sell_ids else False
+
+            if buys_done:
+                outcome = "BUYS_WON"
+            elif sells_done:
+                outcome = "SELLS_WON"
+
+        self.fill_tracker.unwatch(list(all_race_ids.keys()))
+
+        if outcome == "BUYS_WON":
+            # All buys filled — cancel sells, position is complete!
+            log.info(
+                f"  RACE WON | all buys filled — cancelling sells, "
+                f"position complete!"
+            )
+            for s in sell_results:
+                self._cancel_order(s["order_id"])
+
+            # Update unfilled legs with actual fill data before merging
+            for r in unfilled_legs:
+                fill_info = self._verify_fill(r["order_id"])
+                if fill_info:
+                    r["verified"] = True
+                    r["fill_size"] = fill_info["size_matched"]
+            all_legs = filled_legs + unfilled_legs
+            total_cost = sum(r["price"] * size for r in all_legs)
+            del self.positions[race_key]
+            self.positions[pair_key] = {
+                "asset": opp.asset,
+                "event_date": opp.event_date,
+                "size": size,
+                "entry_cost": total_cost,
+                "entry_time": datetime.now(timezone.utc).isoformat(),
+                "legs": all_legs,
+            }
+            self._save_positions()
+            self._record_success()
+
+        elif outcome == "SELLS_WON":
+            # All sells filled — cancel remaining buys, clean exit
+            log.info(
+                f"  RACE EXIT | all sells filled — cancelling buys, "
+                f"clean exit"
+            )
+            for oid in buy_ids:
+                self._cancel_order(oid)
+            del self.positions[race_key]
+            self._save_positions()
+
+        else:
+            # Timeout — leave everything as-is for manual handling
+            log.warning(
+                f"  RACE TIMEOUT | neither side completed in "
+                f"{FILL_TIMEOUT_S}s — position saved as '{race_key}' "
+                f"for manual handling"
+            )
 
     # ------------------------------------------------------------------
     # Exit: sell all legs when bids sum >= $1
@@ -677,14 +1058,19 @@ class ArbExecutor:
 
         Uses live WebSocket data from ob_manager for bid pricing.
         Only triggers the actual sell when bids sum >= $1/share.
+        Skips positions with status RACING/UNWINDING (handled separately).
         """
         from arb_scanner import compute_leg_sell
 
         to_close = []
         for pair_key, pos in self.positions.items():
+            # Skip race/unwind positions — they have their own logic
+            if pos.get("status") in ("RACING", "UNWINDING"):
+                continue
+
             total_bid = 0.0
             can_sell = True
-            bid_prices = {}  # token_id -> (avg_bid, fillable_size)
+            bid_prices = {}
 
             for lg in pos["legs"]:
                 avg_bid, filled = compute_leg_sell(
@@ -703,7 +1089,7 @@ class ArbExecutor:
             self._exit_position(pair_key, bid_prices)
 
     def _exit_position(self, pair_key: str, bid_prices: dict[str, float]):
-        """Sell all legs of a position.
+        """Sell all legs of a position using GTC limit orders.
 
         Args:
             pair_key: Position identifier.
@@ -718,8 +1104,6 @@ class ArbExecutor:
         )
 
         # Verify we hold shares before selling.
-        # Only sell the bot's tracked size — never touch excess shares
-        # (those may be from manual trades).
         # If balance < tracked size, assume operator manually closed it.
         for lg in pos["legs"]:
             balance = self._check_balance(lg["token_id"])
@@ -733,8 +1117,7 @@ class ArbExecutor:
                 self._save_positions()
                 return
 
-        # Place all sell orders concurrently using ob_manager bid prices.
-        # Sell exactly pos["size"] — leave any excess shares untouched.
+        # Place GTC sell orders concurrently at ob_manager bid prices
         results = []
         start_time = time.time()
         with ThreadPoolExecutor(max_workers=n_legs) as pool:
@@ -746,6 +1129,7 @@ class ArbExecutor:
                 fut = pool.submit(
                     self._place_order,
                     lg["token_id"], "SELL", bid_price, size,
+                    OrderType.GTC,
                 )
                 futures[fut] = lg
 
@@ -764,20 +1148,34 @@ class ArbExecutor:
                 except Exception as e:
                     log.error(f"  SELL ERROR | {lg.get('description', '')}: {e}")
 
-        # Wait for settlement then verify
-        time.sleep(FILL_SETTLE_DELAY_S)
+        sent = [r for r in results if r["success"]]
+        if not sent:
+            log.warning(
+                f"EXEC SELL FAIL | {pos['asset']} {pos['event_date']} | "
+                f"no sells accepted — will retry next cycle"
+            )
+            return
 
-        sell_confirmed = []
-        sell_failed = []
-        for r in results:
-            if not r["success"]:
-                sell_failed.append(r)
-                continue
-            fill_info = self._verify_fill(r["order_id"])
-            if fill_info and fill_info["size_matched"] >= size - 0.01:
-                sell_confirmed.append(r)
-            else:
-                sell_failed.append(r)
+        # Wait for fills via user WS
+        watch_map = {r["order_id"]: size for r in sent}
+        self.fill_tracker.watch_orders(watch_map)
+        fill_status = self.fill_tracker.wait_for_fills(
+            list(watch_map.keys()), timeout=FILL_TIMEOUT_S
+        )
+        self.fill_tracker.unwatch(list(watch_map.keys()))
+
+        sell_confirmed = [
+            r for r in sent
+            if fill_status.get(r["order_id"], {}).get("filled")
+        ]
+        sell_unfilled = [
+            r for r in sent
+            if not fill_status.get(r["order_id"], {}).get("filled")
+        ]
+
+        # Cancel unfilled sells
+        for r in sell_unfilled:
+            self._cancel_order(r["order_id"])
 
         exec_time_ms = (time.time() - start_time) * 1000
 
@@ -793,13 +1191,21 @@ class ArbExecutor:
             del self.positions[pair_key]
             self._save_positions()
         elif sell_confirmed:
-            # Some legs sold, some didn't — awkward state
-            log.error(
+            # Update position to only contain unsold legs
+            sold_tokens = {r["token_id"] for r in sell_confirmed}
+            remaining_legs = [
+                lg for lg in pos["legs"]
+                if lg["token_id"] not in sold_tokens
+            ]
+            sold_proceeds = sum(r["price"] * r["size"] for r in sell_confirmed)
+            pos["legs"] = remaining_legs
+            pos["entry_cost"] = max(0, pos["entry_cost"] - sold_proceeds)
+            self._save_positions()
+            log.warning(
                 f"EXEC SELL PARTIAL | {pos['asset']} {pos['event_date']} | "
                 f"{len(sell_confirmed)}/{n_legs} legs sold | "
-                f"MANUAL INTERVENTION NEEDED for unsold legs"
+                f"{len(remaining_legs)} legs remaining — will retry next cycle"
             )
-            # Don't remove position — operator needs to handle this
         else:
             log.warning(
                 f"EXEC SELL FAIL | {pos['asset']} {pos['event_date']} | "

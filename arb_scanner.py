@@ -40,6 +40,8 @@ LOG_DIR.mkdir(exist_ok=True)
 
 MIN_EDGE_CENTS = 1.0       # min edge in cents to log (0.5c = $0.005)
 MIN_SIZE_USD = 5.0         # min deployable size to log
+POLY_MIN_SHARES = 5        # Polymarket minimum: 5 shares per taker order
+POLY_MIN_ORDER_USD = 1.0   # Polymarket minimum: $1 per taker order
 SCAN_ASSETS = ["bitcoin", "ethereum", "solana", "xrp"]  # asset names for slug construction
 SCAN_DAYS_AHEAD = 7        # how many days ahead to scan
 REFRESH_INTERVAL = 3600    # re-discover events every hour (seconds)
@@ -120,7 +122,14 @@ def _fetch_event_by_slug(slug: str) -> Optional[dict]:
     r = requests.get(f"{GAMMA_URL}/events", params={"slug": slug}, timeout=10)
     r.raise_for_status()
     data = r.json()
-    return data[0] if data else None
+    if not data:
+        return None
+    # Gamma API can return fuzzy matches — only accept exact slug match.
+    event = data[0]
+    if event.get("slug") != slug:
+        log.debug(f"Slug mismatch: requested '{slug}', got '{event.get('slug')}' — skipping")
+        return None
+    return event
 
 
 def fetch_event_pairs_by_slug(assets: list[str], days_ahead: int) -> list[tuple[dict, dict, str, str]]:
@@ -170,6 +179,25 @@ def fetch_event_pairs_by_slug(assets: list[str], days_ahead: int) -> list[tuple[
         between_ev = results.get(bs)
         above_ev = results.get(as_)
         if between_ev and above_ev:
+            # Cross-validate: both event titles must reference the expected date.
+            # This catches cases where the slug matched but the API returned a
+            # different date's event (e.g., weekly vs daily market with similar slug).
+            btwn_title = between_ev.get("title", "").lower()
+            above_title = above_ev.get("title", "").lower()
+            # date_str is like "april 5" — check both titles contain it
+            date_check = date_str.lower()
+            if date_check not in btwn_title:
+                log.warning(
+                    f"Date mismatch: between event '{between_ev.get('title')}' "
+                    f"doesn't contain '{date_str}' — skipping {asset} {date_str}"
+                )
+                continue
+            if date_check not in above_title:
+                log.warning(
+                    f"Date mismatch: above event '{above_ev.get('title')}' "
+                    f"doesn't contain '{date_str}' — skipping {asset} {date_str}"
+                )
+                continue
             pairs.append((between_ev, above_ev, asset, date_str))
 
     return pairs
@@ -271,6 +299,8 @@ def parse_markets(event: dict, event_type: str) -> list[Market]:
                 ))
         elif event_type == "above":
             thresh = parse_threshold(q)
+            if thresh is None:
+                continue  # skip markets with unparseable thresholds
             markets.append(Market(
                 question=q, condition_id=cid,
                 yes_token=yes_tok, no_token=no_tok,
@@ -658,9 +688,10 @@ def enumerate_coverings(pair: EventPair) -> list[list[tuple[str, str, str]]]:
         if pair.below_market:
             legs.append((pair.below_market.yes_token, "YES",
                          f"Below {_fmt_price(pair.below_market.threshold)} [between]"))
-        # Middle: between contracts up to t_high
+        # Middle: between contracts fully within lowest..t_high
         for m in btwn:
-            if m.lower is not None and m.lower < t_high:
+            if (m.lower is not None and m.lower >= lowest - 0.01
+                    and m.upper is not None and m.upper <= t_high + 0.01):
                 legs.append((m.yes_token, "YES",
                              f"Between {_fmt_price(m.lower)}-{_fmt_price(m.upper)} [between]"))
         # Top: above YES
@@ -683,9 +714,10 @@ def enumerate_coverings(pair: EventPair) -> list[list[tuple[str, str, str]]]:
         am = above_map[t_low]
         legs.append((am.no_token, "NO",
                      f"Above {_fmt_price(t_low)} NO [above]"))
-        # Middle: between contracts from t_low up
+        # Middle: between contracts fully within t_low..highest
         for m in btwn:
-            if m.lower is not None and m.lower >= t_low:
+            if (m.lower is not None and m.lower >= t_low - 0.01
+                    and m.upper is not None and m.upper <= highest + 0.01):
                 legs.append((m.yes_token, "YES",
                              f"Between {_fmt_price(m.lower)}-{_fmt_price(m.upper)} [between]"))
         # Top: between tail
@@ -799,11 +831,23 @@ def check_arb(pair: EventPair, ob_manager: OrderbookManager) -> list[ArbOpportun
             if best_deploy < MIN_SIZE_USD or best_deploy_cost >= 1.0:
                 continue
 
+            # Enforce Polymarket taker minimums: 5 shares AND $1 per leg
+            best_deploy = max(best_deploy, POLY_MIN_SHARES)
+            # Recheck profitability at enforced min size
+            profitable, tc = _test_size(best_deploy)
+            if not profitable:
+                continue
+
             # Compute per-leg details at best_deploy size
             deploy_legs = []
+            skip_covering = False
             for token_id, side, desc in covering:
                 avg_price, filled = compute_leg_cost(ob_manager, token_id, best_deploy)
                 leg_cost_usd = avg_price * best_deploy
+                # Per-leg minimum: each taker order must be >= $1
+                if leg_cost_usd < POLY_MIN_ORDER_USD:
+                    skip_covering = True
+                    break
                 deploy_legs.append({
                     "description": desc,
                     "token": token_id,
@@ -812,6 +856,8 @@ def check_arb(pair: EventPair, ob_manager: OrderbookManager) -> list[ArbOpportun
                     "size": best_deploy,
                     "leg_cost_usd": round(leg_cost_usd, 2),
                 })
+            if skip_covering:
+                continue
 
             total_cost_usd = sum(lg["leg_cost_usd"] for lg in deploy_legs)
             payout_usd = best_deploy  # covering guarantees exactly 1 share pays out
@@ -897,7 +943,7 @@ class Simulator:
             opps = check_arb(pair, ob_manager)
             for opp in opps:
                 prev = best_per_asset.get(opp.asset)
-                if prev is None or opp.pnl_usd > prev[0].pnl_usd:
+                if prev is None or _opp_rank(opp) > _opp_rank(prev[0]):
                     pair_key = f"{opp.asset}|{opp.event_date}"
                     best_per_asset[opp.asset] = (opp, pair_key)
 
@@ -1024,6 +1070,14 @@ class Simulator:
 # ---------------------------------------------------------------------------
 # Opportunity logging
 # ---------------------------------------------------------------------------
+def _opp_rank(opp: ArbOpportunity) -> tuple:
+    """Rank opportunities: highest PnL first, fewer legs as tiebreaker.
+
+    Returns a tuple for comparison — higher is better.
+    """
+    return (opp.pnl_usd, -len(opp.legs))
+
+
 def log_opportunity(opp: ArbOpportunity):
     """Log an arbitrage opportunity to file and console."""
     log.info(
@@ -1237,12 +1291,15 @@ async def run_scanner():
                             last_data = time.time()
                         elif evt_type == "price_change":
                             for pc in data.get("price_changes", []):
-                                ob_manager.apply_price_change(
-                                    token_id=pc["asset_id"],
-                                    price=float(pc["price"]),
-                                    size=float(pc["size"]),
-                                    side=pc["side"],
-                                )
+                                try:
+                                    ob_manager.apply_price_change(
+                                        token_id=pc["asset_id"],
+                                        price=float(pc["price"]),
+                                        size=float(pc["size"]),
+                                        side=pc["side"],
+                                    )
+                                except (KeyError, ValueError, TypeError) as e:
+                                    log.debug(f"Malformed price_change: {e}")
                             last_data = time.time()
                         else:
                             continue
@@ -1294,12 +1351,12 @@ async def run_scanner():
                                 prev = last_logged_arbs.get(key)
                                 if prev is None:
                                     log_opportunity(opp)
-                                    last_logged_arbs[key] = (opp.best_edge_cents, opp.max_size_usd)
+                                    last_logged_arbs[key] = (opp.edge_cents, opp.max_size_usd)
                                     if key not in arb_lifecycle:
                                         arb_lifecycle[key] = {
                                             "first_seen_time": time.time(),
                                             "first_seen_iso": opp.timestamp,
-                                            "initial_edge": opp.best_edge_cents,
+                                            "initial_edge": opp.edge_cents,
                                             "initial_size": opp.max_size_usd,
                                             "peak_edge": opp.best_edge_cents,
                                             "peak_size": opp.max_size_usd,
@@ -1310,7 +1367,7 @@ async def run_scanner():
                                     size_changed = prev_size > 0 and abs(opp.max_size_usd - prev_size) / prev_size >= SIZE_CHANGE_RATIO
                                     if edge_changed or size_changed:
                                         log_opportunity(opp)
-                                        last_logged_arbs[key] = (opp.best_edge_cents, opp.max_size_usd)
+                                        last_logged_arbs[key] = (opp.edge_cents, opp.max_size_usd)
                                     # Update peaks
                                     lc = arb_lifecycle.get(key)
                                     if lc:
@@ -1381,7 +1438,7 @@ async def run_scanner():
                                 opps = check_arb(p, ob_manager)
                                 for opp in opps:
                                     prev = best_per_asset.get(opp.asset)
-                                    if prev is None or opp.pnl_usd > prev[0].pnl_usd:
+                                    if prev is None or _opp_rank(opp) > _opp_rank(prev[0]):
                                         pair_key = f"{opp.asset}|{opp.event_date}"
                                         best_per_asset[opp.asset] = (opp, pair_key)
                             for _, (opp, pair_key) in best_per_asset.items():
