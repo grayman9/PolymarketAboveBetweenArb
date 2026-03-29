@@ -1427,13 +1427,16 @@ async def run_scanner():
                         # Live executor: check exits and execute new opportunities
                         if live_executor is not None:
                             live_executor.check_exits(ob_manager)
+                            live_executor.check_races()
                             # Execute best opportunity per asset (same logic as simulator)
-                            active_assets = {
-                                p["asset"] for p in live_executor.positions.values()
-                            }
+                            # Block by specific pair_key, not entire asset —
+                            # allows multiple dates for the same asset
+                            active_pair_keys = set(live_executor.positions.keys())
                             best_per_asset: dict[str, tuple] = {}
                             for p in pairs:
-                                if p.asset in active_assets:
+                                pair_key = f"{p.asset}|{p.date_str}"
+                                if pair_key in active_pair_keys or \
+                                   any(pk.startswith(f"{p.asset}|{p.date_str}|") for pk in active_pair_keys):
                                     continue
                                 opps = check_arb(p, ob_manager)
                                 for opp in opps:

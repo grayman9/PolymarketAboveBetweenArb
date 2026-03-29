@@ -426,36 +426,81 @@ class ArbExecutor:
             status = pos.get("status")
 
             if status == "RACING":
-                # Cancel any leftover buy/sell orders from the race
+                # Resume the race: check which orders are still live,
+                # re-place sells if needed, and let check_races() monitor.
                 log.info(
                     f"  RACING | {pos['asset']} {pos['event_date']} | "
-                    f"cancelling leftover orders from pre-restart race"
+                    f"resuming race from previous session"
                 )
-                for order in pos.get("buy_orders", []):
-                    self._cancel_order(order.get("order_id", ""))
-                for order in pos.get("sell_orders", []):
-                    self._cancel_order(order.get("order_id", ""))
-                # Check if we still hold shares on the filled legs
+                # Check if buy orders are still live
+                buy_orders = pos.get("buy_orders", [])
+                sell_orders = pos.get("sell_orders", [])
+
+                # Verify buys — check if they filled while we were down
+                for bo in buy_orders:
+                    fill_info = self._verify_fill(bo.get("order_id", ""))
+                    if fill_info and fill_info["size_matched"] >= bo["size"] - 0.01:
+                        log.info(
+                            f"  RACING | buy filled while offline: "
+                            f"{bo.get('description', '')}"
+                        )
+                        bo["filled"] = True
+
+                all_buys_filled = all(bo.get("filled") for bo in buy_orders)
+                if all_buys_filled:
+                    # All buys filled — cancel sells, convert to full position
+                    log.info(f"  RACING → COMPLETE | all buys filled!")
+                    for so in sell_orders:
+                        self._cancel_order(so.get("order_id", ""))
+                    pos.pop("status", None)
+                    pos.pop("buy_orders", None)
+                    pos.pop("sell_orders", None)
+                    continue
+
+                # Check if we still hold shares on filled legs
                 has_shares = False
                 for lg in pos.get("legs", []):
                     balance = self._check_balance(lg["token_id"])
                     if balance >= 0.5:
                         has_shares = True
-                        log.warning(
-                            f"  RACING | {lg.get('description', '')} | "
-                            f"balance={balance:.1f} — MANUAL CLEANUP NEEDED"
-                        )
                 if not has_shares:
+                    # All sells filled while offline — cancel buys
+                    log.info(f"  RACING → EXITED | sells filled, cancelling buys")
+                    for bo in buy_orders:
+                        self._cancel_order(bo.get("order_id", ""))
                     to_remove.append(pk)
-                else:
-                    # Convert to a regular unhedged position for tracking
-                    pos.pop("status", None)
-                    pos.pop("buy_orders", None)
-                    pos.pop("sell_orders", None)
-                    log.warning(
-                        f"  RACING → UNHEDGED | {pos['asset']} "
-                        f"{pos['event_date']} | saved for manual handling"
+                    continue
+
+                # Race still active — re-place any missing sell orders
+                for lg in pos.get("legs", []):
+                    balance = self._check_balance(lg["token_id"])
+                    has_sell = any(
+                        so["token_id"] == lg["token_id"] for so in sell_orders
                     )
+                    if balance >= 0.5 and not has_sell:
+                        result = self._place_order(
+                            lg["token_id"], "SELL", lg["price"], balance,
+                            OrderType.GTC,
+                        )
+                        if result["success"]:
+                            sell_orders.append({
+                                "order_id": result["order_id"],
+                                "token_id": lg["token_id"],
+                                "description": lg.get("description", ""),
+                                "price": lg["price"],
+                                "size": balance,
+                            })
+                            log.info(
+                                f"  RACING | re-placed sell: "
+                                f"{lg.get('description', '')} | "
+                                f"{balance:.2f} @ {lg['price']:.4f}"
+                            )
+                pos["sell_orders"] = sell_orders
+                self._save_positions()
+                log.info(
+                    f"  RACING | {pos['asset']} {pos['event_date']} | "
+                    f"{len(buy_orders)} buys + {len(sell_orders)} sells active"
+                )
                 continue
 
             if status == "UNWINDING":
@@ -910,18 +955,23 @@ class ArbExecutor:
         # that sits on the book. We're not trying to force an immediate
         # fill, we're racing against the remaining buys filling.
         # Entry price is where we bought, so selling at entry = breakeven.
+        # IMPORTANT: sell the actual balance, not the requested size —
+        # fees are deducted in shares on buy, so we hold less than ordered.
         sell_results = []
         for r in filled_legs:
             sell_price = r["price"]
+            # Get actual balance to sell (after fee deduction)
+            actual_balance = self._check_balance(r["token_id"])
+            sell_size = actual_balance if actual_balance >= 0.5 else size
             try:
                 result = self._place_order(
-                    r["token_id"], "SELL", sell_price, size,
+                    r["token_id"], "SELL", sell_price, sell_size,
                     OrderType.GTC,
                 )
                 if result["success"]:
                     log.info(
                         f"  RACE SELL | {r['description']} | "
-                        f"{size:.0f} @ {sell_price:.4f} | "
+                        f"{sell_size:.2f} @ {sell_price:.4f} | "
                         f"order_id={result['order_id']}"
                     )
                     sell_results.append({
@@ -929,7 +979,7 @@ class ArbExecutor:
                         "token_id": r["token_id"],
                         "description": r["description"],
                         "price": r["price"],
-                        "size": size,
+                        "size": sell_size,
                     })
                 else:
                     log.warning(
@@ -938,13 +988,7 @@ class ArbExecutor:
             except Exception as e:
                 log.error(f"  RACE SELL ERROR | {r['description']} | {e}")
 
-        # Register all orders (remaining buys + new sells) with fill tracker
-        buy_ids = {r["order_id"]: size for r in unfilled_legs}
-        sell_ids = {s["order_id"]: size for s in sell_results}
-        all_race_ids = {**buy_ids, **sell_ids}
-        self.fill_tracker.watch_orders(all_race_ids)
-
-        # Save position so it's tracked across restarts
+        # Save position — check_races() will monitor on every cycle
         race_key = f"{pair_key}|race"
         self.positions[race_key] = {
             "asset": opp.asset,
@@ -964,85 +1008,198 @@ class ArbExecutor:
         self._save_positions()
 
         log.info(
-            f"  RACE | {len(buy_ids)} buys + {len(sell_ids)} sells active | "
-            f"waiting up to {FILL_TIMEOUT_S}s..."
+            f"  RACE STARTED | {len(unfilled_legs)} buys + "
+            f"{len(sell_results)} sells active | "
+            f"check_races() will monitor on each cycle"
         )
 
-        # Monitor: check periodically which side is winning
-        deadline = time.time() + FILL_TIMEOUT_S
-        outcome = None
+    # ------------------------------------------------------------------
+    # Race monitoring: check racing positions every cycle
+    # ------------------------------------------------------------------
+    _last_race_check = 0.0  # class-level throttle
 
-        while time.time() < deadline and outcome is None:
-            self.fill_tracker.wait_for_fills(
-                list(all_race_ids.keys()),
-                timeout=min(FILL_POLL_INTERVAL_S, deadline - time.time()),
-            )
+    def check_races(self):
+        """Monitor RACING positions and adjust order sizes as fills come in.
 
-            # Check if all buys filled
-            buys_done = all(
-                self.fill_tracker.get_status(oid).get("filled", False)
-                for oid in buy_ids
-            )
-            # Check if all sells filled
-            sells_done = all(
-                self.fill_tracker.get_status(oid).get("filled", False)
-                for oid in sell_ids
-            ) if sell_ids else False
+        Called every cycle from the scanner loop, but throttled to run at
+        most every 10 seconds (REST API calls are expensive).
 
-            if buys_done:
-                outcome = "BUYS_WON"
-            elif sells_done:
-                outcome = "SELLS_WON"
+        For each racing position:
 
-        self.fill_tracker.unwatch(list(all_race_ids.keys()))
+        The race tracks the "uncovered size" — how many shares on the filled
+        legs are not yet matched by the unfilled buy.
 
-        if outcome == "BUYS_WON":
-            # All buys filled — cancel sells, position is complete!
-            log.info(
-                f"  RACE WON | all buys filled — cancelling sells, "
-                f"position complete!"
-            )
-            for s in sell_results:
-                self._cancel_order(s["order_id"])
+        As the buy partially fills:
+          uncovered shrinks → cancel+replace sells with smaller size
 
-            # Update unfilled legs with actual fill data before merging
-            for r in unfilled_legs:
-                fill_info = self._verify_fill(r["order_id"])
+        As sells partially fill:
+          shares are gone → cancel+replace buy with smaller size
+
+        Terminal states:
+          - Buy fully fills → cancel all sells, position is complete
+          - All shares sold → cancel buy, clean exit
+          - Both sides converge to 0 → clean exit
+        """
+        # Throttle: only check every 10 seconds
+        now = time.time()
+        if now - self._last_race_check < 10:
+            return
+        self._last_race_check = now
+
+        # Skip if no racing positions
+        has_racing = any(
+            p.get("status") == "RACING" for p in self.positions.values()
+        )
+        if not has_racing:
+            return
+
+        to_remove = []
+        for pk, pos in list(self.positions.items()):
+            if pos.get("status") != "RACING":
+                continue
+
+            buy_orders = pos.get("buy_orders", [])
+            sell_orders = pos.get("sell_orders", [])
+            target_size = pos["size"]
+
+            # --- Measure current state ---
+
+            # How much did the buy fill?
+            buy_filled = 0.0
+            for bo in buy_orders:
+                fill_info = self._verify_fill(bo.get("order_id", ""))
                 if fill_info:
-                    r["verified"] = True
-                    r["fill_size"] = fill_info["size_matched"]
-            all_legs = filled_legs + unfilled_legs
-            total_cost = sum(r["price"] * size for r in all_legs)
-            del self.positions[race_key]
-            self.positions[pair_key] = {
-                "asset": opp.asset,
-                "event_date": opp.event_date,
-                "size": size,
-                "entry_cost": total_cost,
-                "entry_time": datetime.now(timezone.utc).isoformat(),
-                "legs": all_legs,
-            }
-            self._save_positions()
-            self._record_success()
+                    bo["filled_size"] = fill_info["size_matched"]
+                    buy_filled = max(buy_filled, fill_info["size_matched"])
 
-        elif outcome == "SELLS_WON":
-            # All sells filled — cancel remaining buys, clean exit
-            log.info(
-                f"  RACE EXIT | all sells filled — cancelling buys, "
-                f"clean exit"
-            )
-            for oid in buy_ids:
-                self._cancel_order(oid)
-            del self.positions[race_key]
-            self._save_positions()
+            # What's the actual balance on each filled leg?
+            leg_balances = {}
+            for lg in pos.get("legs", []):
+                leg_balances[lg["token_id"]] = self._check_balance(
+                    lg["token_id"]
+                )
 
-        else:
-            # Timeout — leave everything as-is for manual handling
-            log.warning(
-                f"  RACE TIMEOUT | neither side completed in "
-                f"{FILL_TIMEOUT_S}s — position saved as '{race_key}' "
-                f"for manual handling"
-            )
+            # Uncovered = target - buy_filled (what we still need to unwind)
+            uncovered = max(0, target_size - buy_filled)
+
+            # --- Terminal states ---
+
+            # Buy fully filled → complete position
+            if buy_filled >= target_size - 0.01:
+                log.info(
+                    f"RACE WON | {pos['asset']} {pos['event_date']} | "
+                    f"buy filled {buy_filled:.1f}/{target_size:.0f} — "
+                    f"cancelling sells, position complete!"
+                )
+                for so in sell_orders:
+                    self._cancel_order(so.get("order_id", ""))
+                base_key = pk.replace("|race", "")
+                del self.positions[pk]
+                self.positions[base_key] = {
+                    "asset": pos["asset"],
+                    "event_date": pos["event_date"],
+                    "size": target_size,
+                    "entry_cost": pos["entry_cost"],
+                    "entry_time": pos["entry_time"],
+                    "legs": pos["legs"] + [
+                        {"token_id": bo["token_id"],
+                         "description": bo.get("description", ""),
+                         "price": bo["price"],
+                         "size": bo.get("filled_size", target_size)}
+                        for bo in buy_orders
+                    ],
+                }
+                self._save_positions()
+                self._record_success()
+                continue
+
+            # All shares sold (no balance left) → clean exit
+            total_balance = sum(leg_balances.values())
+            if total_balance < 0.5 and sell_orders:
+                log.info(
+                    f"RACE EXIT | {pos['asset']} {pos['event_date']} | "
+                    f"all shares sold — cancelling buys, clean exit"
+                )
+                for bo in buy_orders:
+                    self._cancel_order(bo.get("order_id", ""))
+                to_remove.append(pk)
+                continue
+
+            # --- Adjust order sizes ---
+
+            # Adjust sells: should match uncovered size, not original size
+            changed = False
+            for so in sell_orders:
+                current_sell_size = so.get("size", 0)
+                balance = leg_balances.get(so["token_id"], 0)
+                # Sell size = min(uncovered, actual balance)
+                new_sell_size = min(uncovered, balance)
+
+                if new_sell_size < 0.5:
+                    # Nothing to sell — cancel
+                    self._cancel_order(so.get("order_id", ""))
+                    so["size"] = 0
+                    so["order_id"] = ""
+                    changed = True
+                elif abs(new_sell_size - current_sell_size) >= 0.5:
+                    # Size changed significantly — cancel and re-place
+                    self._cancel_order(so.get("order_id", ""))
+                    result = self._place_order(
+                        so["token_id"], "SELL", so["price"], new_sell_size,
+                        OrderType.GTC,
+                    )
+                    if result["success"]:
+                        log.info(
+                            f"  RACE RESIZE SELL | {so.get('description', '')} | "
+                            f"{current_sell_size:.1f} → {new_sell_size:.1f} | "
+                            f"order_id={result['order_id']}"
+                        )
+                        so["order_id"] = result["order_id"]
+                        so["size"] = new_sell_size
+                    changed = True
+
+            # Adjust buy: should match total remaining balance on filled legs
+            # (if sells reduced the balance, buy should shrink too)
+            for bo in buy_orders:
+                current_buy_size = bo.get("size", 0)
+                # New buy size = how many shares we still hold across filled legs
+                new_buy_size = min(total_balance, target_size)
+
+                if new_buy_size < 0.5:
+                    self._cancel_order(bo.get("order_id", ""))
+                    bo["size"] = 0
+                    bo["order_id"] = ""
+                    changed = True
+                elif abs(new_buy_size - current_buy_size) >= 0.5:
+                    self._cancel_order(bo.get("order_id", ""))
+                    result = self._place_order(
+                        bo["token_id"], "BUY", bo["price"], new_buy_size,
+                        OrderType.GTC,
+                    )
+                    if result["success"]:
+                        log.info(
+                            f"  RACE RESIZE BUY | {bo.get('description', '')} | "
+                            f"{current_buy_size:.1f} → {new_buy_size:.1f} | "
+                            f"order_id={result['order_id']}"
+                        )
+                        bo["order_id"] = result["order_id"]
+                        bo["size"] = new_buy_size
+                    changed = True
+
+            # Clean up fully-cancelled orders
+            pos["sell_orders"] = [
+                so for so in sell_orders if so.get("size", 0) >= 0.5
+            ]
+            pos["buy_orders"] = [
+                bo for bo in buy_orders if bo.get("size", 0) >= 0.5
+            ]
+
+            if changed:
+                self._save_positions()
+
+        for pk in to_remove:
+            del self.positions[pk]
+            self._save_positions()
 
     # ------------------------------------------------------------------
     # Exit: sell all legs when bids sum >= $1
@@ -1097,21 +1254,24 @@ class ArbExecutor:
             f"selling {size:.0f} shares across {n_legs} legs"
         )
 
-        # Verify we hold shares before selling.
-        # If balance < tracked size, assume operator manually closed it.
+        # Get actual balances for each leg (fees reduce shares on buy).
+        # If any leg has 0 balance, assume operator manually closed it.
+        leg_balances = {}
         for lg in pos["legs"]:
             balance = self._check_balance(lg["token_id"])
-            if balance < size - 0.01:
+            if balance < 0.5:
                 log.info(
                     f"  SELL SKIP | {pos['asset']} {pos['event_date']} | "
-                    f"{lg.get('description', '')} balance={balance:.1f} < "
-                    f"tracked={size:.0f} — assuming manually closed"
+                    f"{lg.get('description', '')} balance={balance:.1f} — "
+                    f"assuming manually closed"
                 )
                 del self.positions[pair_key]
                 self._save_positions()
                 return
+            leg_balances[lg["token_id"]] = balance
 
-        # Place GTC sell orders concurrently at ob_manager bid prices
+        # Place GTC sell orders concurrently at ob_manager bid prices.
+        # Sell actual balance per leg, not the requested size.
         results = []
         start_time = time.time()
         with ThreadPoolExecutor(max_workers=n_legs) as pool:
@@ -1120,9 +1280,10 @@ class ArbExecutor:
                 bid_price = bid_prices.get(lg["token_id"], 0.0)
                 if bid_price <= 0:
                     continue
+                sell_size = leg_balances[lg["token_id"]]
                 fut = pool.submit(
                     self._place_order,
-                    lg["token_id"], "SELL", bid_price, size,
+                    lg["token_id"], "SELL", bid_price, sell_size,
                     OrderType.GTC,
                 )
                 futures[fut] = lg
