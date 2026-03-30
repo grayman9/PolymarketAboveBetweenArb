@@ -50,7 +50,7 @@ BOOK_STALE_THRESHOLD_S = 5 # skip legs whose book hasn't been updated in this ma
 
 # Execution config
 TRADING_MODE = "LIVE"     # "PAPER" = log only (no orders), "LIVE" = place real orders
-MAX_TRADE_SIZE = 20        # max shares per leg (caps deployable size for live trades)
+MAX_TRADE_SIZE = 10        # max shares per leg (caps deployable size for live trades)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1255,6 +1255,9 @@ async def run_scanner():
                 ws_msg_count = 0  # count WS messages for heartbeat
                 arb_check_count = 0  # count arb check cycles for heartbeat
                 ws_instant_recv = 0  # count of instant recv() — indicates queue backlog
+                ws_recv_total_ms = 0.0  # total recv() time for avg calculation
+                ws_lag_total_ms = 0.0  # total end-to-end lag (server timestamp vs our clock)
+                ws_lag_count = 0       # number of messages with timestamps
                 snapshots_loaded = False
                 # Track last logged arbs to avoid spamming: key -> (best_edge_cents, max_size)
                 last_logged_arbs: dict[str, tuple[float, float]] = {}
@@ -1287,6 +1290,7 @@ async def run_scanner():
                         msg = await asyncio.wait_for(ws.recv(), timeout=15)
                         recv_elapsed = time.time() - recv_start
                         ws_msg_count += 1
+                        ws_recv_total_ms += recv_elapsed * 1000
                         if recv_elapsed < 0.001:  # < 1ms = message was already queued
                             ws_instant_recv += 1
                     except asyncio.TimeoutError:
@@ -1322,6 +1326,17 @@ async def run_scanner():
                             )
                             last_data = time.time()
                         elif evt_type == "price_change":
+                            # Measure end-to-end lag using server timestamp
+                            msg_ts = data.get("timestamp")
+                            if msg_ts:
+                                try:
+                                    server_time = float(msg_ts)
+                                    lag_ms = (time.time() - server_time) * 1000
+                                    if 0 < lag_ms < 60000:  # sanity: 0-60s
+                                        ws_lag_total_ms += lag_ms
+                                        ws_lag_count += 1
+                                except (ValueError, TypeError):
+                                    pass
                             for pc in data.get("price_changes", []):
                                 try:
                                     ob_manager.apply_price_change(
@@ -1515,9 +1530,17 @@ async def run_scanner():
                                 ws_instant_recv / ws_msg_count * 100
                                 if ws_msg_count > 0 else 0
                             )
-                            lag_str = ""
+                            avg_recv_ms = (
+                                ws_recv_total_ms / ws_msg_count
+                                if ws_msg_count > 0 else 0
+                            )
+                            avg_lag_ms = (
+                                ws_lag_total_ms / ws_lag_count
+                                if ws_lag_count > 0 else 0
+                            )
+                            lag_str = f" | e2e_lag={avg_lag_ms:.0f}ms"
                             if lag_pct > 50:
-                                lag_str = f" | WS LAG {lag_pct:.0f}%"
+                                lag_str += f" WS LAG {lag_pct:.0f}%"
                                 log.warning(
                                     f"WS BACKLOG | {lag_pct:.0f}% of messages "
                                     f"arrived queued — processing may be falling behind"
@@ -1534,6 +1557,9 @@ async def run_scanner():
                             ws_msg_count = 0
                             arb_check_count = 0
                             ws_instant_recv = 0
+                            ws_recv_total_ms = 0.0
+                            ws_lag_total_ms = 0.0
+                            ws_lag_count = 0
                             sim.summary()
                             if live_executor is not None:
                                 live_executor.summary()
