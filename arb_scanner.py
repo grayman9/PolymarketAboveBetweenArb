@@ -1326,11 +1326,27 @@ async def run_scanner():
                             )
                             last_data = time.time()
                         elif evt_type == "price_change":
-                            # Measure end-to-end lag using server timestamp
+                            # Measure end-to-end lag using server timestamp.
+                            # Check both outer message and individual price_changes.
                             msg_ts = data.get("timestamp")
+                            if not msg_ts:
+                                pcs = data.get("price_changes", [])
+                                if pcs and isinstance(pcs[0], dict):
+                                    msg_ts = pcs[0].get("timestamp")
                             if msg_ts:
                                 try:
                                     server_time = float(msg_ts)
+                                    # Log first timestamp we see for debugging
+                                    if ws_lag_count == 0:
+                                        log.info(
+                                            f"  WS TIMESTAMP DEBUG | "
+                                            f"raw={msg_ts} parsed={server_time} "
+                                            f"now={time.time():.3f}"
+                                        )
+                                    # Polymarket uses epoch seconds (10 digits)
+                                    # If it looks like milliseconds (13 digits), convert
+                                    if server_time > 1e12:
+                                        server_time /= 1000
                                     lag_ms = (time.time() - server_time) * 1000
                                     if 0 < lag_ms < 60000:  # sanity: 0-60s
                                         ws_lag_total_ms += lag_ms
