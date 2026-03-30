@@ -1424,28 +1424,32 @@ async def run_scanner():
                         sim.check_exits(ob_manager)
                         sim.check_entries(pairs, ob_manager)
 
-                        # Live executor: check exits and execute new opportunities
+                        # Live executor: check exits and races (fast, non-blocking)
                         if live_executor is not None:
                             live_executor.check_exits(ob_manager)
                             live_executor.check_races()
-                            # Execute best opportunity per asset (same logic as simulator)
-                            # Block by specific pair_key, not entire asset —
-                            # allows multiple dates for the same asset
-                            active_pair_keys = set(live_executor.positions.keys())
-                            best_per_asset: dict[str, tuple] = {}
-                            for p in pairs:
-                                pair_key = f"{p.asset}|{p.date_str}"
-                                if pair_key in active_pair_keys or \
-                                   any(pk.startswith(f"{p.asset}|{p.date_str}|") for pk in active_pair_keys):
-                                    continue
-                                opps = check_arb(p, ob_manager)
-                                for opp in opps:
-                                    prev = best_per_asset.get(opp.asset)
-                                    if prev is None or _opp_rank(opp) > _opp_rank(prev[0]):
-                                        pair_key = f"{opp.asset}|{opp.event_date}"
-                                        best_per_asset[opp.asset] = (opp, pair_key)
-                            for _, (opp, pair_key) in best_per_asset.items():
-                                live_executor.execute_opportunity(opp, pair_key)
+
+                            # Only look for new trades if not currently executing
+                            if not live_executor.is_executing():
+                                active_pair_keys = set(live_executor.positions.keys())
+                                best_per_asset: dict[str, tuple] = {}
+                                for p in pairs:
+                                    pair_key = f"{p.asset}|{p.date_str}"
+                                    if pair_key in active_pair_keys or \
+                                       any(pk.startswith(f"{p.asset}|{p.date_str}|") for pk in active_pair_keys):
+                                        continue
+                                    opps = check_arb(p, ob_manager)
+                                    for opp in opps:
+                                        prev = best_per_asset.get(opp.asset)
+                                        if prev is None or _opp_rank(opp) > _opp_rank(prev[0]):
+                                            pair_key = f"{opp.asset}|{opp.event_date}"
+                                            best_per_asset[opp.asset] = (opp, pair_key)
+                                for _, (opp, pair_key) in best_per_asset.items():
+                                    # Run execution in a background thread so the
+                                    # WS loop keeps processing messages and pings
+                                    live_executor.execute_in_background(
+                                        opp, pair_key, ob_manager
+                                    )
 
                         # Periodic heartbeat + summary (every 5 min)
                         now_t = time.time()

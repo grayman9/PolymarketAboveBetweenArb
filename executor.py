@@ -36,8 +36,14 @@ LOG_DIR = Path(__file__).parent / "logs"
 EXECUTIONS_CSV = LOG_DIR / "executions.csv"
 POSITIONS_FILE = LOG_DIR / "open_positions.json"
 
-# How long to wait for GTC limit orders to fill before evaluating
-FILL_TIMEOUT_S = 180         # 3 minutes — arbs persist for minutes per duration data
+# How long to wait for initial GTC fills before adaptive pricing kicks in
+INITIAL_FILL_WAIT_S = 15     # 15s — if a leg hasn't filled, start bumping
+# How long between each price bump on unfilled legs
+ADAPTIVE_TICK_INTERVAL_S = 10  # bump by 1 tick every 10s
+# Max total time for adaptive pricing before falling back to race
+ADAPTIVE_MAX_TIME_S = 120     # 2 minutes of adaptive pricing
+# Grace period before posting sells on a racing position
+RACE_SELL_GRACE_S = 600      # 10 minutes — give the buy time to fill first
 FILL_POLL_INTERVAL_S = 5     # check fill status every 5s during timeout
 # How long to wait after all fills before verifying balances
 FILL_SETTLE_DELAY_S = 5.0
@@ -348,6 +354,8 @@ class ArbExecutor:
         # Circuit breaker: consecutive execution failures
         self._consecutive_failures = 0
         self._circuit_open = False
+        # Background execution thread
+        self._exec_thread: threading.Thread | None = None
 
         self._load_positions()
 
@@ -716,16 +724,38 @@ class ArbExecutor:
     # ------------------------------------------------------------------
     # Entry: buy all legs
     # ------------------------------------------------------------------
-    def execute_opportunity(self, opp, pair_key: str) -> bool:
-        """Execute an arb by placing FOK buy orders for all legs.
+    def is_executing(self) -> bool:
+        """Check if an execution is currently running in the background."""
+        return self._exec_thread is not None and self._exec_thread.is_alive()
+
+    def execute_in_background(self, opp, pair_key: str, ob_manager=None):
+        """Run execute_opportunity in a background thread.
+
+        The WS loop continues processing messages while execution runs.
+        Only one execution at a time — is_executing() gates new entries.
+        """
+        if self.is_executing():
+            return
+        self._exec_thread = threading.Thread(
+            target=self.execute_opportunity,
+            args=(opp, pair_key, ob_manager),
+            daemon=True,
+            name="executor",
+        )
+        self._exec_thread.start()
+
+    def execute_opportunity(self, opp, pair_key: str, ob_manager=None) -> bool:
+        """Execute an arb opportunity.
 
         Steps:
-          0. Pre-execute safety checks (circuit breaker, rate limit, cooldown, etc.)
-          1. Place FOK BUY for each leg concurrently
-          2. Wait briefly for settlement
-          3. Verify each fill via get_order()
-          4. Confirm share balances
-          5. If incomplete: unwind any filled legs
+          0. Pre-execute safety checks
+          1. Dynamic size-down to thinnest leg's depth
+          2. Pre-flight depth check on all legs
+          3. Compute aggressive prices (thin legs get 1-2 ticks above ask)
+          4. FAK sweep on all legs (instant partial fills)
+          5. If any leg got zero → immediate unwind
+          6. GTC for remainder + adaptive pricing
+          7. If still partial after adaptive → race (keep buys + post sells)
 
         Returns True if all legs confirmed filled.
         """
@@ -748,14 +778,8 @@ class ArbExecutor:
         if block_reason:
             return False
 
-        # === CRITICAL SECTION ===
-        # Any unhandled exception MUST trigger _record_failure so the pair
-        # goes on cooldown and the circuit breaker can trip. Without this,
-        # a crash between order placement and failure recording would allow
-        # the next cycle to retry immediately — the exact bug that caused
-        # the order spam incident.
         try:
-            return self._execute_inner(opp, pair_key, size, n_legs)
+            return self._execute_inner(opp, pair_key, size, n_legs, ob_manager)
         except Exception as e:
             log.error(
                 f"EXEC CRASH | {opp.asset} {opp.event_date} | "
@@ -764,131 +788,486 @@ class ArbExecutor:
             self._record_failure(pair_key)
             return False
 
+    # ------------------------------------------------------------------
+    # Pre-flight checks and pricing
+    # ------------------------------------------------------------------
+    def _get_ask_depth(self, token_id: str, ob_manager) -> tuple[float, float]:
+        """Return (best_ask_price, total_ask_depth) from live orderbook."""
+        if ob_manager is None:
+            return (0.0, 0.0)
+        book = ob_manager.books.get(token_id)
+        if not book or not book.asks:
+            return (0.0, 0.0)
+        best_ask = book.asks[0].price
+        total_depth = sum(lvl.size for lvl in book.asks)
+        return (best_ask, total_depth)
+
+    def _dynamic_size_down(self, legs: list[dict], target_size: float,
+                           ob_manager) -> float:
+        """Cap trade size to the thinnest leg's available depth."""
+        if ob_manager is None:
+            return target_size
+        min_depth = float('inf')
+        thin_desc = ""
+        for lg in legs:
+            _, depth = self._get_ask_depth(lg["token"], ob_manager)
+            if depth < min_depth:
+                min_depth = depth
+                thin_desc = lg["description"]
+        if min_depth < target_size:
+            new_size = max(int(min_depth), 5)  # floor to int, enforce minimum
+            if new_size < 5:
+                return 0  # can't trade
+            log.info(
+                f"  SIZE DOWN | {thin_desc} depth={min_depth:.1f} | "
+                f"capping {target_size:.0f} → {new_size}"
+            )
+            return new_size
+        return target_size
+
+    def _preflight_check(self, legs: list[dict], size: float,
+                         ob_manager) -> bool:
+        """Verify all legs still have asks >= size. Returns False to abort."""
+        if ob_manager is None:
+            return True  # no ob_manager = skip check
+        for lg in legs:
+            _, depth = self._get_ask_depth(lg["token"], ob_manager)
+            if depth < size - 0.01:
+                log.warning(
+                    f"  PREFLIGHT FAIL | {lg['description']} | "
+                    f"ask_depth={depth:.1f} < target={size:.0f}"
+                )
+                return False
+        return True
+
+    def _compute_leg_prices(self, legs: list[dict], size: float,
+                            ob_manager) -> list[dict]:
+        """Compute order prices per leg. Thin legs get 1-2 ticks above ask."""
+        enriched = []
+        depths = []
+        for lg in legs:
+            best_ask, depth = self._get_ask_depth(lg["token"], ob_manager)
+            if best_ask == 0:
+                best_ask = lg["avg_price"]
+            depths.append(depth)
+            enriched.append({
+                "token": lg["token"],
+                "description": lg["description"],
+                "side": lg["side"],
+                "avg_price": lg["avg_price"],
+                "best_ask": best_ask,
+                "depth": depth,
+                "leg_cost_usd": lg.get("leg_cost_usd", 0),
+            })
+
+        min_depth = min(depths) if depths else 0
+        total_price = 0.0
+
+        for e in enriched:
+            meta = self.meta_cache.get(e["token"])
+            tick = float(meta["tick_size"])
+
+            if e["depth"] <= min_depth + 0.01:
+                # Thin leg: 2 ticks above if very thin, 1 tick otherwise
+                ticks_above = 2 if e["depth"] < size * 0.5 else 1
+                e["order_price"] = e["best_ask"] + tick * ticks_above
+                e["is_thin"] = True
+            else:
+                e["order_price"] = e["best_ask"]
+                e["is_thin"] = False
+            total_price += e["order_price"]
+
+        # If aggressive pricing pushes total over breakeven, back off
+        while total_price > 1.0:
+            # Find the leg with the highest order_price above best_ask
+            max_bump_leg = None
+            max_bump = 0
+            for e in enriched:
+                bump = e["order_price"] - e["best_ask"]
+                if bump > max_bump:
+                    max_bump = bump
+                    max_bump_leg = e
+            if max_bump_leg is None or max_bump < 0.001:
+                break
+            meta = self.meta_cache.get(max_bump_leg["token"])
+            tick = float(meta["tick_size"])
+            max_bump_leg["order_price"] -= tick
+            total_price -= tick
+
+        return enriched
+
+    # ------------------------------------------------------------------
+    # Entry: FAK sweep + GTC remainder + adaptive pricing
+    # ------------------------------------------------------------------
     def _execute_inner(self, opp, pair_key: str, size: float,
-                       n_legs: int) -> bool:
-        """Inner execution logic, wrapped by execute_opportunity's safety net.
+                       n_legs: int, ob_manager=None) -> bool:
+        """Execute with FAK-first strategy and adaptive pricing.
 
         Flow:
-          1. Place GTC limit buys for all legs concurrently
-          2. Wait for fills via user WebSocket (instant notifications)
-          3. After timeout, evaluate:
-             - All legs filled → position confirmed
-             - Partial → keep unfilled buys alive + post GTC sells on
-               filled legs. Whichever side completes first wins.
+          1. Dynamic size-down to thinnest leg
+          2. Pre-flight depth check
+          3. Compute aggressive prices (thin legs get tick boost)
+          4. FAK sweep on all legs (instant partial fills)
+          5. If any leg got zero → immediate unwind
+          6. GTC for remainder + adaptive pricing on unfilled shares
+          7. If still partial after adaptive → race
         """
         legs = opp.legs
+        max_total_cost = 1.0
+        start_time = time.time()
+
+        # 1. Dynamic size-down
+        if ob_manager:
+            size = self._dynamic_size_down(legs, size, ob_manager)
+            if size < 5:
+                return False
+            # Re-check $1 minimum per leg at new size
+            for lg in legs:
+                if lg["avg_price"] * size < 1.0:
+                    return False
+
+        # 2. Pre-flight depth check
+        if not self._preflight_check(legs, size, ob_manager):
+            return False
+
+        # 3. Compute prices (thin legs get boosted)
+        if ob_manager:
+            enriched = self._compute_leg_prices(legs, size, ob_manager)
+        else:
+            enriched = [{
+                "token": lg["token"], "description": lg["description"],
+                "order_price": lg["avg_price"], "best_ask": lg["avg_price"],
+                "is_thin": False, "depth": 999, "side": lg["side"],
+                "avg_price": lg["avg_price"],
+            } for lg in legs]
+
         log.info(
             f"EXEC BUY   | {opp.asset} {opp.event_date} | "
             f"{size:.0f} shares | {n_legs} legs | "
             f"edge={opp.edge_cents:.2f}c | cost={opp.total_cost:.4f}"
         )
+        for e in enriched:
+            tag = " (THIN +tick)" if e["is_thin"] else ""
+            log.info(
+                f"  PRICE | {e['description']} | "
+                f"ask={e['best_ask']:.4f} → order={e['order_price']:.4f} | "
+                f"depth={e['depth']:.0f}{tag}"
+            )
 
-        # 1. Place all GTC limit buy orders concurrently
-        results = []
-        start_time = time.time()
+        # 4. FAK sweep — instant partial fills
+        fak_results = []
         with ThreadPoolExecutor(max_workers=n_legs) as pool:
             futures = {}
-            for lg in legs:
+            for e in enriched:
                 fut = pool.submit(
                     self._place_order,
-                    lg["token"], "BUY", lg["avg_price"], size,
-                    OrderType.GTC,
+                    e["token"], "BUY", e["order_price"], size,
+                    OrderType.FAK,
                 )
-                futures[fut] = lg
+                futures[fut] = e
 
             for fut in as_completed(futures):
-                lg = futures[fut]
+                e = futures[fut]
                 try:
                     result = fut.result()
-                    result["description"] = lg["description"]
-                    results.append(result)
-                    status = "SENT" if result["success"] else "REJECTED"
+                    result["description"] = e["description"]
+                    result["current_price"] = e["order_price"]
+                    result["is_thin"] = e["is_thin"]
+                    fak_results.append(result)
+                    status = "FAK OK" if result["success"] else "FAK FAIL"
                     log.info(
-                        f"  {status} | {lg['description']} | "
-                        f"{size:.0f} @ {lg['avg_price']:.4f} | "
+                        f"  {status} | {e['description']} | "
+                        f"{size:.0f} @ {e['order_price']:.4f} | "
                         f"order_id={result['order_id']}"
                     )
-                except Exception as e:
-                    log.error(f"  ERROR | {lg['description']} | {e}")
-                    results.append({
-                        "token_id": lg["token"],
-                        "side": "BUY",
-                        "price": lg["avg_price"],
-                        "size": size,
-                        "response": None,
-                        "success": False,
-                        "order_id": "",
-                        "description": lg["description"],
+                except Exception as ex:
+                    log.error(f"  FAK ERROR | {e['description']} | {ex}")
+                    fak_results.append({
+                        "token_id": e["token"], "side": "BUY",
+                        "price": e["order_price"],
+                        "current_price": e["order_price"],
+                        "size": size, "response": None,
+                        "success": False, "order_id": "",
+                        "description": e["description"],
+                        "is_thin": e["is_thin"],
                     })
 
-        sent = [r for r in results if r["success"]]
-        self._record_orders(len(sent))
+        self._record_orders(sum(1 for r in fak_results if r["success"]))
 
-        if not sent:
-            log.warning(
-                f"EXEC FAIL  | {opp.asset} {opp.event_date} | "
-                f"no orders accepted"
+        # Verify FAK fills via REST (FAK is instant, results available immediately)
+        time.sleep(0.5)  # brief settle
+        for r in fak_results:
+            if r["success"] and r["order_id"]:
+                fill_info = self._verify_fill(r["order_id"])
+                r["fak_filled"] = fill_info["size_matched"] if fill_info else 0.0
+            else:
+                r["fak_filled"] = 0.0
+            log.info(
+                f"  FAK FILL | {r['description']} | "
+                f"filled={r['fak_filled']:.1f}/{size:.0f}"
             )
+
+        # 5. Evaluate FAK results
+        min_filled = min(r["fak_filled"] for r in fak_results)
+        any_zero = any(r["fak_filled"] < 0.01 for r in fak_results)
+        all_complete = all(r["fak_filled"] >= size - 0.01 for r in fak_results)
+
+        if all_complete:
+            # All legs fully filled by FAK — done!
+            total_cost = sum(r["current_price"] * size for r in fak_results)
             exec_time_ms = (time.time() - start_time) * 1000
-            self._log_execution(opp, size, results, "ALL_REJECTED", exec_time_ms)
+            log.info(
+                f"EXEC OK    | {opp.asset} {opp.event_date} | "
+                f"all {n_legs} legs FAK-filled in {exec_time_ms:.0f}ms | "
+                f"cost=${total_cost:.2f}"
+            )
+            self.positions[pair_key] = {
+                "asset": opp.asset,
+                "event_date": opp.event_date,
+                "size": size,
+                "entry_cost": total_cost,
+                "entry_time": datetime.now(timezone.utc).isoformat(),
+                "legs": [{
+                    "token_id": r["token_id"],
+                    "description": r["description"],
+                    "price": r["current_price"],
+                    "size": r["fak_filled"],
+                    "verified": True,
+                    "fill_size": r["fak_filled"],
+                } for r in fak_results],
+            }
+            self._save_positions()
+            self._log_execution(opp, size, fak_results, "FILLED",
+                                exec_time_ms)
+            self._record_success()
+            return True
+
+        if any_zero:
+            # At least one leg got nothing — immediate unwind
+            log.warning(
+                f"EXEC ZERO LEG | {opp.asset} {opp.event_date} | "
+                f"one leg got 0 fills — unwinding..."
+            )
+            filled_legs = [r for r in fak_results if r["fak_filled"] >= 0.01]
+            unfilled_legs = [r for r in fak_results if r["fak_filled"] < 0.01]
+
+            if filled_legs:
+                # Race: post sells on filled legs, keep trying to buy the empty leg
+                # Place GTC buys on the zero-fill legs at aggressive price
+                for r in unfilled_legs:
+                    meta = self.meta_cache.get(r["token_id"])
+                    tick = float(meta["tick_size"])
+                    aggressive_price = r["current_price"] + tick * 2
+                    # Budget check
+                    other_cost = sum(
+                        fr["current_price"] for fr in fak_results
+                        if fr["token_id"] != r["token_id"]
+                    )
+                    if aggressive_price + other_cost > max_total_cost:
+                        aggressive_price = r["current_price"]
+
+                    result = self._place_order(
+                        r["token_id"], "BUY", aggressive_price, size,
+                        OrderType.GTC,
+                    )
+                    if result["success"]:
+                        r["order_id"] = result["order_id"]
+                        r["current_price"] = aggressive_price
+                        r["price"] = aggressive_price
+                        log.info(
+                            f"  GTC BUY (aggressive) | {r['description']} | "
+                            f"{size:.0f} @ {aggressive_price:.4f}"
+                        )
+
+                # Convert filled FAK results to the format _race_unwind expects
+                confirmed = [{
+                    "token_id": r["token_id"],
+                    "description": r["description"],
+                    "price": r["current_price"],
+                    "size": size,
+                    "order_id": r["order_id"],
+                    "verified": True,
+                    "fill_size": r["fak_filled"],
+                } for r in filled_legs]
+
+                unfilled_for_race = [{
+                    "token_id": r["token_id"],
+                    "description": r["description"],
+                    "price": r["current_price"],
+                    "size": size,
+                    "order_id": r["order_id"],
+                } for r in unfilled_legs if r.get("order_id")]
+
+                if unfilled_for_race:
+                    self._race_unwind(
+                        confirmed, unfilled_for_race, size, opp, pair_key
+                    )
+                    exec_time_ms = (time.time() - start_time) * 1000
+                    self._log_execution(opp, size, fak_results,
+                                        "FAK_ZERO_RACING", exec_time_ms)
+                    self._record_failure(pair_key)
+                    return False
+
+            exec_time_ms = (time.time() - start_time) * 1000
+            self._log_execution(opp, size, fak_results, "FAK_ZERO_ABORT",
+                                exec_time_ms)
             self._record_failure(pair_key)
             return False
 
-        # 2. Register orders with the fill tracker and wait
-        watch_map = {r["order_id"]: size for r in sent}
-        self.fill_tracker.watch_orders(watch_map)
-
+        # 6. All legs got partial fills — place GTC for remainder
         log.info(
-            f"  WAITING  | {len(sent)} GTC orders placed, "
-            f"waiting up to {FILL_TIMEOUT_S}s via user WS..."
+            f"  FAK PARTIAL | all legs got fills, placing GTC for remainder..."
         )
+        gtc_results = []
+        for r in fak_results:
+            remainder = size - r["fak_filled"]
+            if remainder < 1:
+                r["gtc_order_id"] = ""
+                continue
+            gtc_result = self._place_order(
+                r["token_id"], "BUY", r["current_price"], remainder,
+                OrderType.GTC,
+            )
+            if gtc_result["success"]:
+                r["gtc_order_id"] = gtc_result["order_id"]
+                log.info(
+                    f"  GTC BUY | {r['description']} | "
+                    f"{remainder:.1f} remaining @ {r['current_price']:.4f}"
+                )
+                self._record_orders(1)
+            else:
+                r["gtc_order_id"] = ""
 
-        fill_status = self.fill_tracker.wait_for_fills(
-            list(watch_map.keys()), timeout=FILL_TIMEOUT_S
-        )
+        # 7. Adaptive pricing on GTC remainders
+        gtc_orders = [r for r in fak_results if r.get("gtc_order_id")]
+        if gtc_orders:
+            watch_map = {r["gtc_order_id"]: size - r["fak_filled"]
+                         for r in gtc_orders}
+            self.fill_tracker.watch_orders(watch_map)
 
-        # 3. Evaluate results — use WS status, then REST-verify unfilled
+            log.info(
+                f"  ADAPTIVE | {len(gtc_orders)} GTC orders, "
+                f"initial wait {INITIAL_FILL_WAIT_S}s..."
+            )
+            self.fill_tracker.wait_for_fills(
+                list(watch_map.keys()), timeout=INITIAL_FILL_WAIT_S
+            )
+
+            filled_gtc_ids = set()
+            for r in gtc_orders:
+                st = self.fill_tracker.get_status(r["gtc_order_id"])
+                if st.get("filled"):
+                    filled_gtc_ids.add(r["gtc_order_id"])
+
+            # Adaptive bumps
+            adaptive_deadline = time.time() + ADAPTIVE_MAX_TIME_S
+            tick_bumps = 0
+
+            while time.time() < adaptive_deadline:
+                still_unfilled = [r for r in gtc_orders
+                                  if r["gtc_order_id"] not in filled_gtc_ids]
+                if not still_unfilled:
+                    break
+
+                tick_bumps += 1
+
+                filled_cost = sum(r["current_price"] for r in fak_results
+                                  if r.get("gtc_order_id", "") in filled_gtc_ids
+                                  or r["fak_filled"] >= size - 0.01)
+                unfilled_cost = sum(r["current_price"] for r in still_unfilled)
+                remaining_budget = max_total_cost - filled_cost
+
+                for r in still_unfilled:
+                    meta = self.meta_cache.get(r["token_id"])
+                    tick = float(meta["tick_size"])
+                    new_price = r["current_price"] + tick
+
+                    other_cost = unfilled_cost - r["current_price"]
+                    if new_price + other_cost > remaining_budget:
+                        continue
+
+                    self._cancel_order(r["gtc_order_id"])
+                    self.fill_tracker.unwatch([r["gtc_order_id"]])
+
+                    remainder = size - r["fak_filled"]
+                    new_result = self._place_order(
+                        r["token_id"], "BUY", new_price, remainder,
+                        OrderType.GTC,
+                    )
+                    if new_result["success"]:
+                        log.info(
+                            f"  ADAPTIVE #{tick_bumps} | {r['description']} | "
+                            f"{r['current_price']:.4f} → {new_price:.4f}"
+                        )
+                        r["gtc_order_id"] = new_result["order_id"]
+                        r["current_price"] = new_price
+                        r["price"] = new_price
+                        self.fill_tracker.watch_orders(
+                            {new_result["order_id"]: remainder}
+                        )
+                        self._record_orders(1)
+
+                current_ids = [r["gtc_order_id"] for r in gtc_orders
+                               if r["gtc_order_id"] not in filled_gtc_ids]
+                fill_status = self.fill_tracker.wait_for_fills(
+                    current_ids, timeout=ADAPTIVE_TICK_INTERVAL_S
+                )
+                for r in gtc_orders:
+                    if r["gtc_order_id"] in filled_gtc_ids:
+                        continue
+                    st = fill_status.get(r["gtc_order_id"], {})
+                    if st.get("filled"):
+                        filled_gtc_ids.add(r["gtc_order_id"])
+                        log.info(
+                            f"  FILLED | {r['description']} | "
+                            f"@ {r['current_price']:.4f} (bump #{tick_bumps})"
+                        )
+
+            self.fill_tracker.unwatch(
+                [r["gtc_order_id"] for r in gtc_orders]
+            )
+
+        # 8. Final evaluation
+        all_filled = True
         confirmed = []
         unfilled = []
-        for r in sent:
-            st = fill_status.get(r["order_id"], {})
-            if st.get("filled"):
-                r["verified"] = True
-                r["fill_size"] = st.get("size_matched", 0.0)
-                confirmed.append(r)
-                log.info(
-                    f"  FILLED   | {r['description']} | "
-                    f"matched={r['fill_size']:.1f}"
-                )
-            else:
-                # REST fallback: WS may have missed fills during reconnect
-                fill_info = self._verify_fill(r["order_id"])
-                if fill_info and fill_info["size_matched"] >= size - 0.01:
-                    r["verified"] = True
-                    r["fill_size"] = fill_info["size_matched"]
-                    confirmed.append(r)
-                    log.info(
-                        f"  FILLED (REST) | {r['description']} | "
-                        f"matched={fill_info['size_matched']:.1f}"
-                    )
-                else:
-                    r["verified"] = False
-                    r["fill_size"] = st.get("size_matched", 0.0)
-                    unfilled.append(r)
-                    log.warning(
-                        f"  UNFILLED | {r['description']} | "
-                        f"matched={r['fill_size']:.1f} (needed {size:.0f})"
-                    )
+        for r in fak_results:
+            total_filled = r["fak_filled"]
+            # Check GTC fill via REST
+            if r.get("gtc_order_id"):
+                fill_info = self._verify_fill(r["gtc_order_id"])
+                if fill_info:
+                    total_filled += fill_info["size_matched"]
 
-        self.fill_tracker.unwatch(list(watch_map.keys()))
+            if total_filled >= size - 0.01:
+                confirmed.append({
+                    "token_id": r["token_id"],
+                    "description": r["description"],
+                    "price": r["current_price"],
+                    "size": total_filled,
+                    "order_id": r.get("gtc_order_id", r["order_id"]),
+                    "verified": True,
+                    "fill_size": total_filled,
+                })
+            else:
+                all_filled = False
+                unfilled.append({
+                    "token_id": r["token_id"],
+                    "description": r["description"],
+                    "price": r["current_price"],
+                    "size": size,
+                    "order_id": r.get("gtc_order_id", r["order_id"]),
+                    "verified": False,
+                    "fill_size": total_filled,
+                })
+
         total_exec_ms = (time.time() - start_time) * 1000
 
-        if len(confirmed) == n_legs:
-            # All legs filled — position confirmed
+        if all_filled:
             total_cost = sum(r["price"] * r["size"] for r in confirmed)
             log.info(
                 f"EXEC OK    | {opp.asset} {opp.event_date} | "
-                f"all {n_legs} legs confirmed in {total_exec_ms:.0f}ms | "
+                f"all {n_legs} legs filled in {total_exec_ms:.0f}ms | "
                 f"cost=${total_cost:.2f}"
             )
             self.positions[pair_key] = {
@@ -900,32 +1279,19 @@ class ArbExecutor:
                 "legs": confirmed,
             }
             self._save_positions()
-            self._log_execution(opp, size, results, "FILLED", total_exec_ms)
+            self._log_execution(opp, size, fak_results, "FILLED",
+                                total_exec_ms)
             self._record_success()
             return True
-        elif not confirmed:
-            # Nothing filled — cancel all and move on
-            for r in unfilled:
-                self._cancel_order(r["order_id"])
-                log.info(f"  CANCELLED | {r['description']}")
-            self._log_execution(opp, size, results, "NONE_FILLED",
-                                total_exec_ms)
-            self._record_failure(pair_key)
-            return False
         else:
-            # Partial fill — smart unwind:
-            #   Keep unfilled buys alive (they might still fill)
-            #   Post GTC sells on filled legs at entry price
-            #   Monitor both sides — whichever completes first wins
+            # Partial — race with remaining GTC orders
             log.warning(
                 f"EXEC PARTIAL | {opp.asset} {opp.event_date} | "
-                f"{len(confirmed)}/{n_legs} legs filled | "
-                f"racing: keeping buys + posting sells..."
+                f"{len(confirmed)}/{n_legs} complete after adaptive | "
+                f"racing..."
             )
-            self._race_unwind(
-                confirmed, unfilled, size, opp, pair_key
-            )
-            self._log_execution(opp, size, results, "PARTIAL_RACING",
+            self._race_unwind(confirmed, unfilled, size, opp, pair_key)
+            self._log_execution(opp, size, fak_results, "PARTIAL_RACING",
                                 total_exec_ms)
             self._record_failure(pair_key)
             return False
@@ -936,59 +1302,14 @@ class ArbExecutor:
     def _race_unwind(self, filled_legs: list[dict],
                      unfilled_legs: list[dict], size: float,
                      opp, pair_key: str):
-        """Handle partial fill by racing both sides.
+        """Handle partial fill: keep buying, defer sells.
 
         Strategy:
           - Keep unfilled buy GTC orders alive (they might still fill)
-          - Post GTC sell orders at entry price on filled legs
-          - Monitor via user WS — whichever side completes first:
-            - All buys fill → cancel sells, position is complete
-            - All sells fill → cancel remaining buys, clean exit
-          - Save to positions for tracking either way
+          - Do NOT post sells yet — give the buy a grace period
+          - check_races() will post sells after RACE_SELL_GRACE_S (10 min)
+          - If the buy fills within the grace period, no sells needed
         """
-        # Wait for settlement so filled shares are available to sell
-        log.info(f"  RACE | waiting {FILL_SETTLE_DELAY_S}s for settlement...")
-        time.sleep(FILL_SETTLE_DELAY_S)
-
-        # Post GTC sells on filled legs at entry price.
-        # Use entry price (not current bid) — this is a passive order
-        # that sits on the book. We're not trying to force an immediate
-        # fill, we're racing against the remaining buys filling.
-        # Entry price is where we bought, so selling at entry = breakeven.
-        # IMPORTANT: sell the actual balance, not the requested size —
-        # fees are deducted in shares on buy, so we hold less than ordered.
-        sell_results = []
-        for r in filled_legs:
-            sell_price = r["price"]
-            # Get actual balance to sell (after fee deduction)
-            actual_balance = self._check_balance(r["token_id"])
-            sell_size = actual_balance if actual_balance >= 0.5 else size
-            try:
-                result = self._place_order(
-                    r["token_id"], "SELL", sell_price, sell_size,
-                    OrderType.GTC,
-                )
-                if result["success"]:
-                    log.info(
-                        f"  RACE SELL | {r['description']} | "
-                        f"{sell_size:.2f} @ {sell_price:.4f} | "
-                        f"order_id={result['order_id']}"
-                    )
-                    sell_results.append({
-                        "order_id": result["order_id"],
-                        "token_id": r["token_id"],
-                        "description": r["description"],
-                        "price": r["price"],
-                        "size": sell_size,
-                    })
-                else:
-                    log.warning(
-                        f"  RACE SELL REJECTED | {r['description']}"
-                    )
-            except Exception as e:
-                log.error(f"  RACE SELL ERROR | {r['description']} | {e}")
-
-        # Save position — check_races() will monitor on every cycle
         race_key = f"{pair_key}|race"
         self.positions[race_key] = {
             "asset": opp.asset,
@@ -996,6 +1317,7 @@ class ArbExecutor:
             "size": size,
             "entry_cost": sum(r["price"] * size for r in filled_legs),
             "entry_time": datetime.now(timezone.utc).isoformat(),
+            "race_started": time.time(),
             "legs": filled_legs,
             "status": "RACING",
             "buy_orders": [{"order_id": r["order_id"],
@@ -1003,14 +1325,15 @@ class ArbExecutor:
                             "description": r["description"],
                             "price": r["price"],
                             "size": size} for r in unfilled_legs],
-            "sell_orders": sell_results,
+            "sell_orders": [],  # deferred — posted after grace period
+            "sells_posted": False,
         }
         self._save_positions()
 
         log.info(
-            f"  RACE STARTED | {len(unfilled_legs)} buys + "
-            f"{len(sell_results)} sells active | "
-            f"check_races() will monitor on each cycle"
+            f"  RACE STARTED | {len(unfilled_legs)} buys active | "
+            f"sells deferred for {RACE_SELL_GRACE_S}s grace period | "
+            f"check_races() will monitor"
         )
 
     # ------------------------------------------------------------------
@@ -1124,6 +1447,50 @@ class ArbExecutor:
                     self._cancel_order(bo.get("order_id", ""))
                 to_remove.append(pk)
                 continue
+
+            # --- Post sells after grace period ---
+            race_started = pos.get("race_started", 0)
+            grace_elapsed = now - race_started
+            if not pos.get("sells_posted") and grace_elapsed >= RACE_SELL_GRACE_S:
+                log.info(
+                    f"  RACE GRACE EXPIRED | {pos['asset']} {pos['event_date']} | "
+                    f"{grace_elapsed:.0f}s elapsed — posting sells"
+                )
+                for lg in pos.get("legs", []):
+                    balance = leg_balances.get(lg["token_id"], 0)
+                    sell_size = min(uncovered, balance)
+                    if sell_size < 0.5:
+                        continue
+                    try:
+                        result = self._place_order(
+                            lg["token_id"], "SELL", lg["price"], sell_size,
+                            OrderType.GTC,
+                        )
+                        if result["success"]:
+                            sell_orders.append({
+                                "order_id": result["order_id"],
+                                "token_id": lg["token_id"],
+                                "description": lg.get("description", ""),
+                                "price": lg["price"],
+                                "size": sell_size,
+                            })
+                            log.info(
+                                f"  RACE SELL | {lg.get('description', '')} | "
+                                f"{sell_size:.2f} @ {lg['price']:.4f}"
+                            )
+                    except Exception as e:
+                        log.error(
+                            f"  RACE SELL ERROR | {lg.get('description', '')} | {e}"
+                        )
+                pos["sell_orders"] = sell_orders
+                pos["sells_posted"] = True
+                self._save_positions()
+            elif not pos.get("sells_posted"):
+                remaining = RACE_SELL_GRACE_S - grace_elapsed
+                log.debug(
+                    f"  RACE GRACE | {pos['asset']} {pos['event_date']} | "
+                    f"{remaining:.0f}s remaining before sells"
+                )
 
             # --- Adjust order sizes ---
 
