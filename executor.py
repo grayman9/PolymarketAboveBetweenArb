@@ -479,31 +479,24 @@ class ArbExecutor:
                     to_remove.append(pk)
                     continue
 
-                # Race still active — re-place any missing sell orders
+                # Race still active — cancel ALL orders on filled leg tokens
+                # (not just tracked IDs — previous session may have left
+                # orphaned orders we don't know about).
                 for lg in pos.get("legs", []):
-                    balance = self._check_balance(lg["token_id"])
-                    has_sell = any(
-                        so["token_id"] == lg["token_id"] for so in sell_orders
-                    )
-                    if balance >= 0.5 and not has_sell:
-                        result = self._place_order(
-                            lg["token_id"], "SELL", lg["price"], balance,
-                            OrderType.GTC,
+                    try:
+                        self.client.cancel_market_orders(
+                            asset_id=lg["token_id"]
                         )
-                        if result["success"]:
-                            sell_orders.append({
-                                "order_id": result["order_id"],
-                                "token_id": lg["token_id"],
-                                "description": lg.get("description", ""),
-                                "price": lg["price"],
-                                "size": balance,
-                            })
-                            log.info(
-                                f"  RACING | re-placed sell: "
-                                f"{lg.get('description', '')} | "
-                                f"{balance:.2f} @ {lg['price']:.4f}"
-                            )
-                pos["sell_orders"] = sell_orders
+                        log.info(
+                            f"  RACING | cancelled all orders on "
+                            f"{lg.get('description', lg['token_id'][:16])}"
+                        )
+                    except Exception as e:
+                        log.warning(f"  Cancel market orders failed: {e}")
+                pos["sell_orders"] = []
+                pos["sells_posted"] = False
+                # Reset grace period so the buy gets a fresh 10 min
+                pos["race_started"] = time.time()
                 self._save_positions()
                 log.info(
                     f"  RACING | {pos['asset']} {pos['event_date']} | "
@@ -1449,7 +1442,12 @@ class ArbExecutor:
                 continue
 
             # --- Post sells after grace period ---
-            race_started = pos.get("race_started", 0)
+            race_started = pos.get("race_started")
+            if not race_started:
+                # Backward compat: old positions don't have race_started.
+                # Set it to now so the grace period starts fresh.
+                race_started = now
+                pos["race_started"] = race_started
             grace_elapsed = now - race_started
             if not pos.get("sells_posted") and grace_elapsed >= RACE_SELL_GRACE_S:
                 log.info(
