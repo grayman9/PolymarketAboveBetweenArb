@@ -46,6 +46,7 @@ SCAN_ASSETS = ["bitcoin", "ethereum", "solana", "xrp"]  # asset names for slug c
 SCAN_DAYS_AHEAD = 7        # how many days ahead to scan
 REFRESH_INTERVAL = 3600    # re-discover events every hour (seconds)
 STALE_TIMEOUT = 60         # force reconnect if no data for this many seconds
+BOOK_STALE_THRESHOLD_S = 5 # skip legs whose book hasn't been updated in this many seconds
 
 # Execution config
 TRADING_MODE = "LIVE"     # "PAPER" = log only (no orders), "LIVE" = place real orders
@@ -410,6 +411,7 @@ class OrderbookManager:
 
     def __init__(self):
         self.books: dict[str, Orderbook] = {}  # token_id -> Orderbook
+        self.last_update: dict[str, float] = {}  # token_id -> time.time()
         self._lock = asyncio.Lock()
 
     def get_best_ask(self, token_id: str) -> Optional[OrderbookLevel]:
@@ -441,6 +443,7 @@ class OrderbookManager:
             key=lambda x: -x.price
         )
         self.books[token_id] = Orderbook(asks=parsed_asks, bids=parsed_bids)
+        self.last_update[token_id] = time.time()
 
     def apply_price_change(self, token_id: str, price: float, size: float, side: str):
         """Apply a single price-level delta. size=0 removes the level."""
@@ -461,6 +464,14 @@ class OrderbookManager:
             if size > 0:
                 levels.append(OrderbookLevel(price, size))
             book.bids = sorted(levels, key=lambda x: -x.price)
+        self.last_update[token_id] = time.time()
+
+    def get_book_age(self, token_id: str) -> float:
+        """Return seconds since last update for this token. inf if never updated."""
+        ts = self.last_update.get(token_id)
+        if ts is None:
+            return float('inf')
+        return time.time() - ts
 
     def _fetch_one(self, tid: str):
         r = requests.get(f"{CLOB_URL}/book", params={"token_id": tid}, timeout=10)
@@ -1243,6 +1254,7 @@ async def run_scanner():
                 last_data = time.time()
                 ws_msg_count = 0  # count WS messages for heartbeat
                 arb_check_count = 0  # count arb check cycles for heartbeat
+                ws_instant_recv = 0  # count of instant recv() — indicates queue backlog
                 snapshots_loaded = False
                 # Track last logged arbs to avoid spamming: key -> (best_edge_cents, max_size)
                 last_logged_arbs: dict[str, tuple[float, float]] = {}
@@ -1271,7 +1283,11 @@ async def run_scanner():
                         break
 
                     try:
+                        recv_start = time.time()
                         msg = await asyncio.wait_for(ws.recv(), timeout=15)
+                        recv_elapsed = time.time() - recv_start
+                        if recv_elapsed < 0.001:  # < 1ms = message was already queued
+                            ws_instant_recv += 1
                     except asyncio.TimeoutError:
                         await ws.send("PING")
                         last_heartbeat = time.time()
@@ -1496,6 +1512,26 @@ async def run_scanner():
                             exec_busy = ""
                             if live_executor and live_executor.is_executing():
                                 exec_busy = " | EXEC BUSY"
+                            # WS lag: % of messages that were already queued
+                            lag_pct = (
+                                ws_instant_recv / ws_msg_count * 100
+                                if ws_msg_count > 0 else 0
+                            )
+                            lag_str = ""
+                            if lag_pct > 50:
+                                lag_str = f" | WS LAG {lag_pct:.0f}%"
+                                log.warning(
+                                    f"WS BACKLOG | {lag_pct:.0f}% of messages "
+                                    f"arrived queued — processing may be falling behind"
+                                )
+                            # Count stale books
+                            stale_count = sum(
+                                1 for tid in ob_manager.books
+                                if ob_manager.get_book_age(tid) > BOOK_STALE_THRESHOLD_S
+                            )
+                            stale_str = ""
+                            if stale_count > 0:
+                                stale_str = f" | {stale_count} stale books"
                             log.info(
                                 f"HEARTBEAT | {len(pairs)} pairs | "
                                 f"{n_books} books | {n_active} active arbs | "
@@ -1503,10 +1539,11 @@ async def run_scanner():
                                 f"mode={TRADING_MODE} | "
                                 f"ws_msgs={ws_msg_count}/5min | "
                                 f"checks={arb_check_count}/5min | "
-                                f"{miss_str}{exec_busy}"
+                                f"{miss_str}{exec_busy}{lag_str}{stale_str}"
                             )
                             ws_msg_count = 0
                             arb_check_count = 0
+                            ws_instant_recv = 0
                             sim.summary()
                             if live_executor is not None:
                                 live_executor.summary()
