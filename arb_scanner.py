@@ -1599,11 +1599,12 @@ async def run_scanner():
                                 if ws_lag_count > 0 else 0
                             )
                             lag_str = f" | e2e_lag={avg_lag_ms:.0f}ms"
-                            if lag_pct > 50:
-                                lag_str += f" WS LAG {lag_pct:.0f}%"
+                            # Only warn if e2e lag is actually high (not just bursty delivery)
+                            if avg_lag_ms > 2000:
+                                lag_str += f" LAGGING"
                                 log.warning(
-                                    f"WS BACKLOG | {lag_pct:.0f}% of messages "
-                                    f"arrived queued — processing may be falling behind"
+                                    f"WS LAGGING | e2e_lag={avg_lag_ms:.0f}ms — "
+                                    f"data may be stale"
                                 )
                             log.info(
                                 f"HEARTBEAT | {len(pairs)} pairs | "

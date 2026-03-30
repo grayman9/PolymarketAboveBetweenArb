@@ -938,14 +938,19 @@ class ArbExecutor:
         # Polymarket taker minimums: 5 shares, $1 per order
         if size < 5:
             return False
-        # Verify every leg meets $1 minimum
+        # For cheap legs that don't meet Polymarket's $1 minimum at
+        # target size, round up that leg's size to clear $1.
+        # Other legs stay at target size — the extra shares on the
+        # cheap leg are minimal unhedged exposure.
         for lg in opp.legs:
-            if lg["avg_price"] * size < 1.0:
-                log.debug(
-                    f"EXEC SKIP | {lg['description']} | "
-                    f"${lg['avg_price'] * size:.2f} < $1 minimum"
+            if lg["avg_price"] * size < 1.0 and lg["avg_price"] > 0:
+                min_shares = int(1.0 / lg["avg_price"]) + 1
+                lg["_size_override"] = max(min_shares, 5)
+                log.info(
+                    f"  SIZE BUMP | {lg['description']} | "
+                    f"${lg['avg_price'] * size:.2f} < $1 min | "
+                    f"bumping {size:.0f} → {lg['_size_override']} shares"
                 )
-                return False
 
         # Run ALL safety checks before touching the exchange
         block_reason = self._pre_execute_checks(pair_key, n_legs)
@@ -1212,14 +1217,21 @@ class ArbExecutor:
         }
         self._save_positions()
 
+        # Build size-override map from opp.legs (set during execute_opportunity)
+        size_overrides = {}
+        for lg in legs:
+            if lg.get("_size_override"):
+                size_overrides[lg["token"]] = lg["_size_override"]
+
         # 4. FAK sweep — instant partial fills
         fak_results = []
         with ThreadPoolExecutor(max_workers=n_legs) as pool:
             futures = {}
             for e in enriched:
+                leg_size = size_overrides.get(e["token"], size)
                 fut = pool.submit(
                     self._place_order,
-                    e["token"], "BUY", e["order_price"], size,
+                    e["token"], "BUY", e["order_price"], leg_size,
                     OrderType.FAK,
                 )
                 futures[fut] = e
