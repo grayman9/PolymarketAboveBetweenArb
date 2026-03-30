@@ -387,6 +387,25 @@ def discover_pairs() -> list[EventPair]:
     return pairs
 
 
+def build_token_to_pairs(pairs: list[EventPair]) -> dict[str, set[int]]:
+    """Map each token_id to the set of pair indices that use it."""
+    mapping: dict[str, set[int]] = {}
+    for i, p in enumerate(pairs):
+        pair_tokens = set()
+        if p.below_market:
+            pair_tokens.add(p.below_market.yes_token)
+        if p.above_tail_market:
+            pair_tokens.add(p.above_tail_market.yes_token)
+        for m in p.between_markets:
+            pair_tokens.add(m.yes_token)
+        for m in p.above_markets:
+            pair_tokens.add(m.yes_token)
+            pair_tokens.add(m.no_token)
+        for tid in pair_tokens:
+            mapping.setdefault(tid, set()).add(i)
+    return mapping
+
+
 def collect_tokens(pairs: list[EventPair]) -> set[str]:
     """Collect all token IDs from event pairs."""
     tokens = set()
@@ -444,9 +463,15 @@ class OrderbookManager:
         )
         self.books[token_id] = Orderbook(asks=parsed_asks, bids=parsed_bids)
         self.last_update[token_id] = time.time()
+        if self.dirty_tokens is not None:
+            self.dirty_tokens.add(token_id)
+
+    dirty_tokens: set = None  # token IDs updated since last check
 
     def apply_price_change(self, token_id: str, price: float, size: float, side: str):
         """Apply a single price-level delta. size=0 removes the level."""
+        if self.dirty_tokens is not None:
+            self.dirty_tokens.add(token_id)
         book = self.books.get(token_id)
         if book is None:
             book = Orderbook()
@@ -1396,6 +1421,9 @@ async def run_scanner():
                                 else:
                                     log.info(f"  {p.asset} {p.date_str}: no arb at current prices")
                             last_data = time.time()  # reset after backfill so watchdog doesn't fire
+                            # Build token→pair mapping and enable dirty tracking
+                            token_to_pairs = build_token_to_pairs(pairs)
+                            ob_manager.dirty_tokens = set()
                             log.info("Streaming orderbook updates... (Ctrl+C to stop)")
                         continue
 
@@ -1404,7 +1432,23 @@ async def run_scanner():
                         last_check = time.time()
                         arb_check_count += 1
                         active_keys = set()
-                        for p in pairs:
+
+                        # Only check pairs whose books changed since last check
+                        dirty = ob_manager.dirty_tokens
+                        ob_manager.dirty_tokens = set()
+                        dirty_pair_idxs = set()
+                        for tid in dirty:
+                            for idx in token_to_pairs.get(tid, ()):
+                                dirty_pair_idxs.add(idx)
+
+                        for i, p in enumerate(pairs):
+                            if i not in dirty_pair_idxs:
+                                # No book changes — re-use last known arb keys
+                                # so they don't get marked as "gone"
+                                for key in list(last_logged_arbs):
+                                    if key.startswith(f"{p.asset}|{p.date_str}|"):
+                                        active_keys.add(key)
+                                continue
                             opps = check_arb(p, ob_manager)
                             for opp in opps:
                                 key = f"{opp.asset}|{opp.event_date}|{opp.coverage}"
@@ -1616,6 +1660,7 @@ async def run_scanner():
 
                             pairs = new_pairs
                             token_list = list(new_tokens)
+                            token_to_pairs = build_token_to_pairs(pairs)
                             log.info(f"  Now tracking {len(pairs)} pairs, {len(token_list)} tokens")
                         except Exception as e:
                             log.warning(f"Hourly refresh failed: {e}")
