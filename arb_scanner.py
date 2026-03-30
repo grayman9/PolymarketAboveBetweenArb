@@ -1286,6 +1286,7 @@ async def run_scanner():
                         recv_start = time.time()
                         msg = await asyncio.wait_for(ws.recv(), timeout=15)
                         recv_elapsed = time.time() - recv_start
+                        ws_msg_count += 1
                         if recv_elapsed < 0.001:  # < 1ms = message was already queued
                             ws_instant_recv += 1
                     except asyncio.TimeoutError:
@@ -1311,7 +1312,6 @@ async def run_scanner():
                                     item.get("bids", []),
                                 )
                         last_data = time.time()
-                        ws_msg_count += 1
                     elif isinstance(data, dict):
                         evt_type = data.get("event_type")
                         if evt_type == "book":
@@ -1321,7 +1321,6 @@ async def run_scanner():
                                 data.get("bids", []),
                             )
                             last_data = time.time()
-                            ws_msg_count += 1
                         elif evt_type == "price_change":
                             for pc in data.get("price_changes", []):
                                 try:
@@ -1334,7 +1333,6 @@ async def run_scanner():
                                 except (KeyError, ValueError, TypeError) as e:
                                     log.debug(f"Malformed price_change: {e}")
                             last_data = time.time()
-                            ws_msg_count += 1
                         else:
                             continue
                     else:
@@ -1524,14 +1522,6 @@ async def run_scanner():
                                     f"WS BACKLOG | {lag_pct:.0f}% of messages "
                                     f"arrived queued — processing may be falling behind"
                                 )
-                            # Count stale books
-                            stale_count = sum(
-                                1 for tid in ob_manager.books
-                                if ob_manager.get_book_age(tid) > BOOK_STALE_THRESHOLD_S
-                            )
-                            stale_str = ""
-                            if stale_count > 0:
-                                stale_str = f" | {stale_count} stale books"
                             log.info(
                                 f"HEARTBEAT | {len(pairs)} pairs | "
                                 f"{n_books} books | {n_active} active arbs | "
@@ -1539,7 +1529,7 @@ async def run_scanner():
                                 f"mode={TRADING_MODE} | "
                                 f"ws_msgs={ws_msg_count}/5min | "
                                 f"checks={arb_check_count}/5min | "
-                                f"{miss_str}{exec_busy}{lag_str}{stale_str}"
+                                f"{miss_str}{exec_busy}{lag_str}"
                             )
                             ws_msg_count = 0
                             arb_check_count = 0
