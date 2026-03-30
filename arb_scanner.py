@@ -1442,12 +1442,15 @@ async def run_scanner():
                                 dirty_pair_idxs.add(idx)
 
                         for i, p in enumerate(pairs):
-                            if i not in dirty_pair_idxs:
-                                # No book changes — re-use last known arb keys
-                                # so they don't get marked as "gone"
-                                for key in list(last_logged_arbs):
-                                    if key.startswith(f"{p.asset}|{p.date_str}|"):
-                                        active_keys.add(key)
+                            # Always recheck pairs that have active arbs —
+                            # the arb may have disappeared even if this pair's
+                            # tokens didn't get a WS update (e.g., book was
+                            # stale from initial backfill).
+                            has_active_arb = any(
+                                key.startswith(f"{p.asset}|{p.date_str}|")
+                                for key in last_logged_arbs
+                            )
+                            if i not in dirty_pair_idxs and not has_active_arb:
                                 continue
                             opps = check_arb(p, ob_manager)
                             for opp in opps:
