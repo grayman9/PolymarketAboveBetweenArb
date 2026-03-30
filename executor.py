@@ -479,23 +479,113 @@ class ArbExecutor:
                     to_remove.append(pk)
                     continue
 
-                # Race still active — cancel ALL orders on filled leg tokens
-                # (not just tracked IDs — previous session may have left
+                # Race still active — cancel ALL orders on all tokens
+                # (filled legs + buy legs — previous session may have left
                 # orphaned orders we don't know about).
+                all_token_ids = set()
                 for lg in pos.get("legs", []):
+                    all_token_ids.add(lg["token_id"])
+                for bo in buy_orders:
+                    all_token_ids.add(bo.get("token_id", ""))
+                for tid in all_token_ids:
+                    if not tid:
+                        continue
                     try:
-                        self.client.cancel_market_orders(
-                            asset_id=lg["token_id"]
-                        )
+                        self.client.cancel_market_orders(asset_id=tid)
                         log.info(
                             f"  RACING | cancelled all orders on "
-                            f"{lg.get('description', lg['token_id'][:16])}"
+                            f"{tid[:16]}..."
                         )
                     except Exception as e:
                         log.warning(f"  Cancel market orders failed: {e}")
+
+                # Check actual balances on ALL tokens (filled + buy legs)
+                # to determine the real state after restart.
+                buy_token_balances = {}
+                for bo in buy_orders:
+                    tid = bo.get("token_id", "")
+                    if tid:
+                        buy_token_balances[tid] = self._check_balance(tid)
+
+                filled_leg_balances = {}
+                for lg in pos.get("legs", []):
+                    filled_leg_balances[lg["token_id"]] = self._check_balance(
+                        lg["token_id"]
+                    )
+
+                # If the buy leg now has shares, it filled (partially or fully)
+                # while we were offline. Update the position accordingly.
+                total_buy_filled = sum(buy_token_balances.values())
+                target = pos["size"]
+
+                if total_buy_filled >= target - 0.01:
+                    # Buy fully filled while offline — complete position!
+                    log.info(
+                        f"  RACING → COMPLETE | buy filled while offline "
+                        f"({total_buy_filled:.1f}/{target:.0f})"
+                    )
+                    base_key = pk.replace("|race", "")
+                    pos.pop("status", None)
+                    pos.pop("buy_orders", None)
+                    pos.pop("sell_orders", None)
+                    pos.pop("sells_posted", None)
+                    pos.pop("race_started", None)
+                    # Add buy legs to the position
+                    for bo in buy_orders:
+                        tid = bo.get("token_id", "")
+                        bal = buy_token_balances.get(tid, 0)
+                        if bal >= 0.5:
+                            pos["legs"].append({
+                                "token_id": tid,
+                                "description": bo.get("description", ""),
+                                "price": bo["price"],
+                                "size": bal,
+                            })
+                    self.positions[base_key] = pos
+                    if pk != base_key:
+                        del self.positions[pk]
+                    self._save_positions()
+                    continue
+
+                if sum(filled_leg_balances.values()) < 0.5:
+                    # All filled legs sold while offline — clean exit
+                    log.info(f"  RACING → EXITED | no balance on filled legs")
+                    to_remove.append(pk)
+                    continue
+
+                # Partial state — re-place buy at aggressive price,
+                # let check_races() handle sells after grace period.
+                # Size the new buy to match what we actually hold.
+                actual_hold = min(filled_leg_balances.values()) if filled_leg_balances else 0
+                new_buy_size = actual_hold  # buy enough to cover what we hold
+
+                new_buy_orders = []
+                for bo in buy_orders:
+                    if new_buy_size < 0.5:
+                        break
+                    # Re-place buy at same price
+                    result = self._place_order(
+                        bo["token_id"], "BUY", bo["price"], new_buy_size,
+                        OrderType.GTC,
+                    )
+                    if result["success"]:
+                        new_buy_orders.append({
+                            "order_id": result["order_id"],
+                            "token_id": bo["token_id"],
+                            "description": bo.get("description", ""),
+                            "price": bo["price"],
+                            "size": new_buy_size,
+                        })
+                        log.info(
+                            f"  RACING | re-placed buy: "
+                            f"{bo.get('description', '')} | "
+                            f"{new_buy_size:.2f} @ {bo['price']:.4f}"
+                        )
+
+                pos["buy_orders"] = new_buy_orders
                 pos["sell_orders"] = []
                 pos["sells_posted"] = False
-                # Reset grace period so the buy gets a fresh 10 min
+                pos["size"] = new_buy_size
                 pos["race_started"] = time.time()
                 self._save_positions()
                 log.info(
