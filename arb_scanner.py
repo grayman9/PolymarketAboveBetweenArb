@@ -756,10 +756,16 @@ def enumerate_coverings(pair: EventPair) -> list[list[tuple[str, str, str]]]:
     return coverings
 
 
-def check_arb(pair: EventPair, ob_manager: OrderbookManager) -> list[ArbOpportunity]:
-    """Check all coverings for arbitrage opportunities."""
+def check_arb(pair: EventPair, ob_manager: OrderbookManager,
+              ) -> list[ArbOpportunity]:
+    """Check all coverings for arbitrage opportunities.
+
+    Also sets pair._nearest_miss_cost to the lowest total_cost among
+    coverings that didn't qualify (for debugging/logging).
+    """
     coverings = enumerate_coverings(pair)
     opportunities = []
+    nearest_miss_cost = float('inf')  # lowest cost that still > threshold
 
     for covering in coverings:
         if len(covering) < 2:
@@ -780,6 +786,10 @@ def check_arb(pair: EventPair, ob_manager: OrderbookManager) -> list[ArbOpportun
 
         if not valid or min_size < 1e-9:
             continue
+
+        # Track nearest miss for debugging
+        if total_cost < nearest_miss_cost and total_cost > 0:
+            nearest_miss_cost = total_cost
 
         best_edge_cents = (1.0 - total_cost) * 100
         max_size_usd = min_size * (1.0 - total_cost) if total_cost < 1.0 else 0.0
@@ -896,6 +906,9 @@ def check_arb(pair: EventPair, ob_manager: OrderbookManager) -> list[ArbOpportun
 
     deduped = list(best_by_range.values())
     deduped.sort(key=lambda x: -x.edge_cents)
+    # Attach nearest miss to pair for debugging (not on the opp, since
+    # there may be zero opps but still a near-miss)
+    pair._nearest_miss_cost = nearest_miss_cost
     return deduped
 
 
@@ -1228,6 +1241,8 @@ async def run_scanner():
                 last_heartbeat = time.time()
                 last_refresh = time.time()
                 last_data = time.time()
+                ws_msg_count = 0  # count WS messages for heartbeat
+                arb_check_count = 0  # count arb check cycles for heartbeat
                 snapshots_loaded = False
                 # Track last logged arbs to avoid spamming: key -> (best_edge_cents, max_size)
                 last_logged_arbs: dict[str, tuple[float, float]] = {}
@@ -1280,6 +1295,7 @@ async def run_scanner():
                                     item.get("bids", []),
                                 )
                         last_data = time.time()
+                        ws_msg_count += 1
                     elif isinstance(data, dict):
                         evt_type = data.get("event_type")
                         if evt_type == "book":
@@ -1289,6 +1305,7 @@ async def run_scanner():
                                 data.get("bids", []),
                             )
                             last_data = time.time()
+                            ws_msg_count += 1
                         elif evt_type == "price_change":
                             for pc in data.get("price_changes", []):
                                 try:
@@ -1301,6 +1318,7 @@ async def run_scanner():
                                 except (KeyError, ValueError, TypeError) as e:
                                     log.debug(f"Malformed price_change: {e}")
                             last_data = time.time()
+                            ws_msg_count += 1
                         else:
                             continue
                     else:
@@ -1339,6 +1357,7 @@ async def run_scanner():
                     # Throttle arb checks to every 50ms
                     if time.time() - last_check >= 0.05:
                         last_check = time.time()
+                        arb_check_count += 1
                         active_keys = set()
                         for p in pairs:
                             opps = check_arb(p, ob_manager)
@@ -1458,12 +1477,36 @@ async def run_scanner():
                             n_books = len(ob_manager.books)
                             n_active = len(active_keys)
                             n_pos = len(live_executor.positions) if live_executor else 0
+                            # Find nearest miss across all pairs
+                            best_miss = float('inf')
+                            best_miss_pair = ""
+                            for p in pairs:
+                                miss = getattr(p, '_nearest_miss_cost', float('inf'))
+                                if miss < best_miss:
+                                    best_miss = miss
+                                    best_miss_pair = f"{p.asset} {p.date_str}"
+                            miss_str = (
+                                f"nearest={best_miss_pair} ${best_miss:.4f} "
+                                f"({(1.0-best_miss)*100:.1f}c short)"
+                                if best_miss < float('inf') and best_miss > 1.0
+                                else f"nearest={best_miss_pair} ${best_miss:.4f}"
+                                if best_miss < float('inf')
+                                else "no coverings priced"
+                            )
+                            exec_busy = ""
+                            if live_executor and live_executor.is_executing():
+                                exec_busy = " | EXEC BUSY"
                             log.info(
                                 f"HEARTBEAT | {len(pairs)} pairs | "
                                 f"{n_books} books | {n_active} active arbs | "
                                 f"{n_pos} open positions | "
-                                f"mode={TRADING_MODE}"
+                                f"mode={TRADING_MODE} | "
+                                f"ws_msgs={ws_msg_count}/5min | "
+                                f"checks={arb_check_count}/5min | "
+                                f"{miss_str}{exec_busy}"
                             )
+                            ws_msg_count = 0
+                            arb_check_count = 0
                             sim.summary()
                             if live_executor is not None:
                                 live_executor.summary()
