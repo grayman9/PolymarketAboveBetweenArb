@@ -356,6 +356,8 @@ class ArbExecutor:
         self._circuit_open = False
         # Background execution thread
         self._exec_thread: threading.Thread | None = None
+        # Lock for positions dict (executor thread + main loop both access)
+        self._positions_lock = threading.Lock()
 
         self._load_positions()
 
@@ -404,10 +406,11 @@ class ArbExecutor:
     # Position persistence
     # ------------------------------------------------------------------
     def _save_positions(self):
-        """Write open positions to disk as JSON."""
+        """Write open positions to disk as JSON (thread-safe)."""
         try:
-            with open(POSITIONS_FILE, "w", encoding="utf-8") as f:
-                json.dump(self.positions, f, indent=2)
+            with self._positions_lock:
+                with open(POSITIONS_FILE, "w", encoding="utf-8") as f:
+                    json.dump(self.positions, f, indent=2)
         except Exception as e:
             log.error(f"Failed to save positions: {e}")
 
@@ -430,8 +433,86 @@ class ArbExecutor:
         based on current balances — the race can't survive a restart.
         """
         to_remove = []
-        for pk, pos in self.positions.items():
+        for pk, pos in list(self.positions.items()):
             status = pos.get("status")
+
+            if status == "PENDING":
+                # Crashed mid-execution. Check which tokens have balances.
+                log.info(
+                    f"  PENDING | {pos['asset']} {pos['event_date']} | "
+                    f"crashed mid-execution — checking balances"
+                )
+                token_ids = pos.get("token_ids", [])
+                prices = pos.get("prices", {})
+                has_shares = False
+                legs_with_shares = []
+                for tid in token_ids:
+                    balance = self._check_balance(tid)
+                    if balance >= 0.5:
+                        has_shares = True
+                        legs_with_shares.append({
+                            "token_id": tid,
+                            "price": prices.get(tid, 0),
+                            "size": balance,
+                            "description": f"token {tid[:16]}...",
+                        })
+                        log.warning(
+                            f"  PENDING | {tid[:16]}... | "
+                            f"balance={balance:.1f} — orphaned shares!"
+                        )
+                    # Cancel any lingering orders
+                    try:
+                        self.client.cancel_market_orders(asset_id=tid)
+                    except Exception:
+                        pass
+
+                if has_shares:
+                    # Convert to RACING so check_races() handles it
+                    # Find which tokens DON'T have shares — those are the buy side
+                    buy_tokens = [tid for tid in token_ids
+                                  if tid not in {l["token_id"] for l in legs_with_shares}]
+                    buy_orders = []
+                    for tid in buy_tokens:
+                        price = prices.get(tid, 0)
+                        if price > 0:
+                            result = self._place_order(
+                                tid, "BUY", price, legs_with_shares[0]["size"],
+                                OrderType.GTC,
+                            )
+                            if result["success"]:
+                                buy_orders.append({
+                                    "order_id": result["order_id"],
+                                    "token_id": tid,
+                                    "description": f"token {tid[:16]}...",
+                                    "price": price,
+                                    "size": legs_with_shares[0]["size"],
+                                })
+                    if buy_orders:
+                        race_key = pk.replace("|pending", "|race")
+                        self.positions[race_key] = {
+                            "asset": pos["asset"],
+                            "event_date": pos["event_date"],
+                            "size": legs_with_shares[0]["size"],
+                            "entry_cost": sum(l["price"] * l["size"] for l in legs_with_shares),
+                            "entry_time": pos.get("entry_time", datetime.now(timezone.utc).isoformat()),
+                            "race_started": time.time(),
+                            "legs": legs_with_shares,
+                            "status": "RACING",
+                            "buy_orders": buy_orders,
+                            "sell_orders": [],
+                            "sells_posted": False,
+                        }
+                        log.info(
+                            f"  PENDING → RACING | {len(legs_with_shares)} legs held, "
+                            f"{len(buy_orders)} buys placed"
+                        )
+                    else:
+                        log.warning(
+                            f"  PENDING | orphaned shares but no buy tokens — "
+                            f"MANUAL CLEANUP NEEDED"
+                        )
+                to_remove.append(pk)
+                continue
 
             if status == "RACING":
                 # Resume the race: check which orders are still live,
@@ -607,8 +688,13 @@ class ArbExecutor:
 
             # Regular position: verify leg balances via data API
             all_legs_ok = True
+            api_failed = False
             for lg in pos["legs"]:
                 balance = self._check_balance(lg["token_id"])
+                if balance < 0:
+                    # API failed — don't make decisions on bad data
+                    api_failed = True
+                    break
                 if balance < pos["size"] - 0.01:
                     all_legs_ok = False
                     log.info(
@@ -619,7 +705,12 @@ class ArbExecutor:
                     )
                     break
 
-            if all_legs_ok:
+            if api_failed:
+                log.warning(
+                    f"  API DOWN | {pos['asset']} {pos['event_date']} | "
+                    f"keeping position — can't verify balances"
+                )
+            elif all_legs_ok:
                 log.info(
                     f"  OK    | {pos['asset']} {pos['event_date']} | "
                     f"{pos['size']:.0f} shares | cost=${pos['entry_cost']:.2f}"
@@ -780,8 +871,8 @@ class ArbExecutor:
         """Check how many shares we hold for a given token.
 
         Uses the data-api positions endpoint which returns actual on-chain
-        holdings for the proxy wallet. The CLOB balance-allowance endpoint
-        does NOT return held shares (only CLOB-available balance).
+        holdings for the proxy wallet. Returns -1.0 on API failure (so
+        callers can distinguish "no shares" from "API down").
         """
         try:
             import requests as _req
@@ -795,14 +886,14 @@ class ArbExecutor:
             )
             if resp.status_code != 200:
                 log.warning(f"  Balance check HTTP {resp.status_code}")
-                return 0.0
+                return -1.0  # API error, not "0 balance"
             for pos in resp.json():
                 if pos.get("asset") == token_id:
                     return float(pos.get("size", 0))
-            return 0.0
+            return 0.0  # API succeeded, token not found = 0 balance
         except Exception as e:
             log.warning(f"  Balance check failed for {token_id[:16]}...: {e}")
-            return 0.0
+            return -1.0  # API error
 
     # ------------------------------------------------------------------
     # Entry: buy all legs
@@ -862,14 +953,21 @@ class ArbExecutor:
             return False
 
         try:
-            return self._execute_inner(opp, pair_key, size, n_legs, ob_manager)
+            result = self._execute_inner(opp, pair_key, size, n_legs, ob_manager)
         except Exception as e:
             log.error(
                 f"EXEC CRASH | {opp.asset} {opp.event_date} | "
                 f"{type(e).__name__}: {e}"
             )
             self._record_failure(pair_key)
-            return False
+            result = False
+        finally:
+            # Clean up PENDING marker — execution completed (success or fail).
+            # If a RACING position was created, it replaces PENDING.
+            pending_key = f"{pair_key}|pending"
+            self.positions.pop(pending_key, None)
+            self._save_positions()
+        return result
 
     # ------------------------------------------------------------------
     # Pre-flight checks and pricing
@@ -1031,11 +1129,34 @@ class ArbExecutor:
         )
         for e in enriched:
             tag = " (THIN +tick)" if e["is_thin"] else ""
+            # Log the orderbook levels we're executing against
+            book_str = ""
+            if ob_manager:
+                book = ob_manager.books.get(e["token"])
+                if book and book.asks:
+                    levels = [f"{lvl.size:.1f}@{lvl.price:.4f}"
+                              for lvl in book.asks[:5]]
+                    book_str = f" | book=[{', '.join(levels)}]"
             log.info(
                 f"  PRICE | {e['description']} | "
                 f"ask={e['best_ask']:.4f} → order={e['order_price']:.4f} | "
-                f"depth={e['depth']:.0f}{tag}"
+                f"depth={e['depth']:.0f}{tag}{book_str}"
             )
+
+        # Save PENDING position before placing any orders.
+        # If we crash mid-execution, reconciliation will see this and
+        # check balances to figure out what actually happened.
+        pending_key = f"{pair_key}|pending"
+        self.positions[pending_key] = {
+            "asset": opp.asset,
+            "event_date": opp.event_date,
+            "size": size,
+            "entry_time": datetime.now(timezone.utc).isoformat(),
+            "status": "PENDING",
+            "token_ids": [e["token"] for e in enriched],
+            "prices": {e["token"]: e["order_price"] for e in enriched},
+        }
+        self._save_positions()
 
         # 4. FAK sweep — instant partial fills
         fak_results = []
