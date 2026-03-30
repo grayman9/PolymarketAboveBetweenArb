@@ -1008,10 +1008,41 @@ class ArbExecutor:
 
     def _preflight_check(self, legs: list[dict], size: float,
                          ob_manager) -> bool:
-        """Verify all legs still have asks >= size. Returns False to abort."""
+        """Verify arb still exists using fresh REST data.
+
+        Fetches live orderbooks via REST for all legs (bypasses WS which
+        may be lagging), updates ob_manager with fresh data, and re-checks
+        that total cost < $1. This is the anti-ghost-arb check.
+        """
         if ob_manager is None:
-            return True  # no ob_manager = skip check
+            return True
+        import requests as _req
+        from arb_scanner import CLOB_URL, compute_leg_cost, MIN_EDGE_CENTS
+
+        log.info(f"  PREFLIGHT | fetching fresh books for {len(legs)} legs via REST...")
+        total_cost = 0.0
         for lg in legs:
+            try:
+                resp = _req.get(
+                    f"{CLOB_URL}/book",
+                    params={"token_id": lg["token"]},
+                    timeout=5,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                # Update ob_manager with fresh data
+                ob_manager.update_book(
+                    lg["token"],
+                    data.get("asks", []),
+                    data.get("bids", []),
+                )
+            except Exception as e:
+                log.warning(
+                    f"  PREFLIGHT REST FAIL | {lg['description']} | {e}"
+                )
+                return False
+
+            # Check depth with fresh data
             _, depth = self._get_ask_depth(lg["token"], ob_manager)
             if depth < size - 0.01:
                 log.warning(
@@ -1019,6 +1050,29 @@ class ArbExecutor:
                     f"ask_depth={depth:.1f} < target={size:.0f}"
                 )
                 return False
+
+            # Compute cost at target size with fresh book
+            avg_price, filled = compute_leg_cost(ob_manager, lg["token"], size)
+            if filled < size - 0.01:
+                log.warning(
+                    f"  PREFLIGHT FAIL | {lg['description']} | "
+                    f"can only fill {filled:.1f} of {size:.0f}"
+                )
+                return False
+            total_cost += avg_price
+
+        edge_cents = (1.0 - total_cost) * 100
+        if edge_cents < MIN_EDGE_CENTS:
+            log.warning(
+                f"  PREFLIGHT GHOST | arb gone on fresh data | "
+                f"cost={total_cost:.4f} edge={edge_cents:.1f}c < {MIN_EDGE_CENTS}c"
+            )
+            return False
+
+        log.info(
+            f"  PREFLIGHT OK | fresh cost={total_cost:.4f} "
+            f"edge={edge_cents:.1f}c"
+        )
         return True
 
     def _compute_leg_prices(self, legs: list[dict], size: float,
