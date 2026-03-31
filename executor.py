@@ -773,14 +773,19 @@ class ArbExecutor:
         Returns None if all checks pass, or an error reason string.
         """
         if self._circuit_open:
+            log.info(f"  PRE-CHECK BLOCK | {pair_key} | circuit breaker open")
             return "circuit breaker open"
         if pair_key in self.positions:
+            log.info(f"  PRE-CHECK BLOCK | {pair_key} | position already open")
             return "position already open"
         if time.monotonic() < self._cooldown_until.get(pair_key, 0):
+            log.info(f"  PRE-CHECK BLOCK | {pair_key} | cooldown active")
             return "cooldown active"
         if len(self.positions) >= MAX_OPEN_POSITIONS:
+            log.info(f"  PRE-CHECK BLOCK | {pair_key} | max positions reached")
             return f"max positions ({MAX_OPEN_POSITIONS}) reached"
         if self._check_rate_limit(n_legs):
+            log.info(f"  PRE-CHECK BLOCK | {pair_key} | rate limit")
             return "rate limit"
         return None
 
@@ -938,6 +943,11 @@ class ArbExecutor:
         # Polymarket taker minimums: 5 shares, $1 per order
         if size < 5:
             return False
+        # Run ALL safety checks before touching the exchange
+        block_reason = self._pre_execute_checks(pair_key, n_legs)
+        if block_reason:
+            return False
+
         # For cheap legs that don't meet Polymarket's $1 minimum at
         # target size, round up that leg's size to clear $1.
         # Other legs stay at target size — the extra shares on the
@@ -951,11 +961,6 @@ class ArbExecutor:
                     f"${lg['avg_price'] * size:.2f} < $1 min | "
                     f"bumping {size:.0f} → {lg['_size_override']} shares"
                 )
-
-        # Run ALL safety checks before touching the exchange
-        block_reason = self._pre_execute_checks(pair_key, n_legs)
-        if block_reason:
-            return False
 
         try:
             result = self._execute_inner(opp, pair_key, size, n_legs, ob_manager)
